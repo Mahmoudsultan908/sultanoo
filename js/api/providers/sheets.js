@@ -196,10 +196,14 @@ const SheetsProvider = (() => {
 
     async getSettings() {
       try {
-        const rows = await getAction('getSettings');
-        const map = {};
-        rows.forEach(r => { if (r.key) map[String(r.key).trim()] = String(r.value ?? '').trim(); });
-        return map;
+        const data = await getAction('getSettings');
+        // دعم الشكلين: object جاهز (key:value) أو array من الصفوف {key,value}
+        if (Array.isArray(data)) {
+          const map = {};
+          data.forEach(r => { if (r.key) map[String(r.key).trim()] = String(r.value ?? '').trim(); });
+          return map;
+        }
+        return data && typeof data === 'object' ? data : {};
       } catch {
         return {};
       }
