@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#1a4731">
+  <meta name="description" content="سلطان للمواد الغذائية — تطبيق الطلبات">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="سلطان">
+
+  <title>سلطان للمواد الغذائية</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
+
+  <!-- CSS -->
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/pages.css">
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!--  SPLASH SCREEN                                                  -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div id="splash-screen">
+  <img src="assets/logo.png" alt="سلطان للمواد الغذائية" class="splash-logo" onerror="this.style.display='none'">
+  <div style="text-align:center">
+    <div style="color:var(--gold-light);font-size:1.4rem;font-weight:800">سلطان للمواد الغذائية</div>
+    <div class="splash-tagline">Sultan Foodstuffs</div>
+  </div>
+  <div class="splash-loader">
+    <div class="splash-loader-bar"></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!--  REGISTER SCREEN                                                -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div id="register-screen">
+  <div class="register-header">
+    <img src="assets/logo.png" alt="Logo" onerror="this.style.display='none'">
+    <h1>مرحباً بك!</h1>
+    <p>أدخل بياناتك لبدء التسوق</p>
+  </div>
+
+  <div class="register-form" id="reg-form">
+    <div class="form-group">
+      <label class="form-label">الاسم الكامل *</label>
+      <input class="form-control" id="reg-name" type="text" placeholder="مثال: أحمد محمد" autocomplete="name">
+    </div>
+    <div class="form-group">
+      <label class="form-label">اسم المحل</label>
+      <input class="form-control" id="reg-shop" type="text" placeholder="مثال: سوبر ماركت النور">
+    </div>
+    <div class="form-group">
+      <label class="form-label">رقم الهاتف *</label>
+      <input class="form-control" id="reg-phone" type="tel" placeholder="01xxxxxxxxx" autocomplete="tel">
+    </div>
+    <div class="form-group">
+      <label class="form-label">المنطقة *</label>
+      <select class="form-control" id="reg-area">
+        <option value="">جاري التحميل...</option>
+      </select>
+    </div>
+
+    <button class="btn btn-primary btn-full btn-lg" id="reg-submit" style="margin-top:0.5rem">
+      ابدأ التسوق →
+    </button>
+
+    <!-- Fix #1: زر تثبيت التطبيق — دائم الظهور داخل صفحة التسجيل -->
+    <button class="btn btn-ghost btn-full" id="reg-install-btn"
+      style="margin-top:.5rem;font-size:.85rem;display:flex;align-items:center;justify-content:center;gap:.4rem;opacity:.8">
+      📲 تثبيت التطبيق على هاتفك
+    </button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!--  PWA INSTALL BANNER                                             -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div id="pwa-install-banner" style="display:none;align-items:center;gap:.75rem;padding:.75rem 1rem;background:linear-gradient(135deg,#1a4731,#2d6a4f);color:#fff;position:fixed;top:0;left:0;right:0;z-index:9999;box-shadow:0 2px 12px rgba(0,0,0,.25)">
+  <span style="font-size:1.4rem">📲</span>
+  <span style="flex:1;font-size:.88rem;font-weight:700">ثبّت التطبيق على هاتفك للوصول السريع</span>
+  <button id="pwa-install-banner-btn" style="background:#c9a227;color:#1a4731;border:none;border-radius:20px;padding:.35rem .9rem;font-weight:800;font-family:inherit;font-size:.82rem;cursor:pointer">تثبيت</button>
+  <button id="pwa-install-banner-close" style="background:transparent;border:none;color:rgba(255,255,255,.7);font-size:1.2rem;cursor:pointer;padding:0 .25rem">✕</button>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!--  OFFLINE BANNER                                                 -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div id="offline-banner">📵 لا يوجد اتصال بالإنترنت</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!--  TOAST                                                          -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div id="toast-container"></div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!--  APP SHELL                                                      -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div id="app">
+
+  <!-- ── HEADER ─────────────────────────────────────────────────── -->
+  <header id="header">
+    <div class="header-logo">
+      <img src="assets/logo.png" alt="Logo" onerror="this.style.display='none'">
+      <div class="brand-name">سلطان<br>للمواد الغذائية</div>
+    </div>
+    <div class="header-actions">
+      <button class="header-btn" onclick="navigateTo('search')" aria-label="بحث">
+        🔍
+      </button>
+      <button class="header-btn" onclick="navigateTo('cart')" aria-label="السلة" style="display:flex;align-items:center;gap:.35rem;padding:.25rem .4rem">
+        <span id="cart-total-live" style="display:none;font-size:.75rem;font-weight:800;color:var(--gold-main,#c9a227);white-space:nowrap;background:rgba(201,162,39,.13);padding:.1rem .4rem;border-radius:8px"></span>
+        <span style="position:relative;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px">
+          🛒
+          <span class="cart-badge" data-cart-count style="position:absolute;top:-7px;left:-7px;min-width:17px;height:17px;font-size:.62rem">0</span>
+        </span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ── MAIN CONTENT ───────────────────────────────────────────── -->
+  <main id="main">
+
+    <!-- ╔═══════════════════════════════╗ -->
+    <!-- ║  HOME PAGE                    ║ -->
+    <!-- ╚═══════════════════════════════╝ -->
+    <div data-page="home">
+      <!-- Search -->
+      <div class="home-search-wrap">
+        <div class="home-search-bar">
+          <span class="search-icon">🔍</span>
+          <input type="search" id="home-search-input" placeholder="ابحث عن منتج...">
+        </div>
+      </div>
+
+      <!-- بانر العروض -->
+      <div id="home-banners" style="display:none"></div>
+
+      <!-- عروض الأسبوع -->
+      <div class="section-wrap">
+        <div class="section-header">
+          <h2 class="section-title"><span class="icon">🔥</span> عروض الأسبوع</h2>
+          <button class="see-all" onclick="navigateTo('search', {featured: true})">الكل</button>
+        </div>
+        <div class="scroll-row" id="home-featured"></div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- الأكثر مبيعاً -->
+      <div class="section-wrap">
+        <div class="section-header">
+          <h2 class="section-title"><span class="icon">⭐</span> الأكثر مبيعاً</h2>
+        </div>
+        <div id="home-bestsellers"></div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- الأقسام -->
+      <div class="section-wrap">
+        <div class="section-header">
+          <h2 class="section-title"><span class="icon">📂</span> الأقسام</h2>
+        </div>
+        <div class="categories-grid" id="home-categories"></div>
+      </div>
+
+      <!-- مسافة سفلية -->
+      <div style="height:1rem"></div>
+    </div>
+
+    <!-- ╔═══════════════════════════════╗ -->
+    <!-- ║  PRODUCT PAGE                 ║ -->
+    <!-- ╚═══════════════════════════════╝ -->
+    <div data-page="product">
+      <div class="cat-page-header">
+        <button class="back-btn" onclick="Router.back()">◀</button>
+        <h2 id="product-page-title">تفاصيل المنتج</h2>
+      </div>
+      <div id="product-page-content"></div>
+    </div>
+
+    <!-- ╔═══════════════════════════════╗ -->
+    <!-- ║  CATEGORY PAGE                ║ -->
+    <!-- ╚═══════════════════════════════╝ -->
+    <div data-page="category">
+      <div class="cat-page-header">
+        <button class="back-btn" onclick="Router.back()">◀</button>
+        <h2 id="cat-page-title">القسم</h2>
+      </div>
+      <!-- Subcategory tabs -->
+      <div class="subcat-tabs" id="cat-subcats" style="display:none"></div>
+      <!-- Products -->
+      <div id="cat-products"></div>
+    </div>
+
+    <!-- ╔═══════════════════════════════╗ -->
+    <!-- ║  SEARCH PAGE                  ║ -->
+    <!-- ╚═══════════════════════════════╝ -->
+    <div data-page="search" id="page-search">
+      <div style="padding:0.75rem 1rem 0.25rem; display:flex; align-items:center; gap:.5rem;">
+        <button class="back-btn" style="width:36px;height:36px;border-radius:50%;background:var(--gray-100);display:flex;align-items:center;justify-content:center;" onclick="Router.back()">◀</button>
+        <div class="search-bar" style="margin:0;flex:1">
+          <span class="search-icon">🔍</span>
+          <input type="search" id="search-input" placeholder="ابحث عن منتج..." autofocus>
+          <button class="clear-btn" id="search-clear" style="display:none">✕</button>
+        </div>
+      </div>
+      <div class="search-results-header" id="search-results-header"></div>
+      <div id="search-results"></div>
+    </div>
+
+    <!-- ╔═══════════════════════════════╗ -->
+    <!-- ║  CART PAGE                    ║ -->
+    <!-- ╚═══════════════════════════════╝ -->
+    <div data-page="cart">
+      <div class="page-header">
+        <button class="back-btn" onclick="Router.back()">◀</button>
+        <h2>سلتي 🛒</h2>
+        <button class="btn btn-ghost btn-sm" onclick="Cart.loadLastOrder()">↩️ آخر طلبية</button>
+        <button class="btn btn-ghost btn-sm" onclick="CartPage.clearCart()">🗑️</button>
+      </div>
+
+      <!-- Empty state -->
+      <div id="cart-empty" class="empty-state">
+        <span class="empty-icon">🛒</span>
+        <h3>السلة فارغة</h3>
+        <p>أضف منتجات من الكتالوج</p>
+        <button class="btn btn-primary btn-sm cart-empty-cta" onclick="navigateTo('home')">
+          تصفح المنتجات
+        </button>
+      </div>
+
+      <!-- Items List -->
+      <div id="cart-list"></div>
+
+      <!-- Footer -->
+      <div id="cart-footer" class="hidden">
+        <!-- Notes -->
+        <div class="order-notes">
+          <span class="notes-label">📝 ملاحظات على الطلب</span>
+          <textarea id="order-notes" placeholder="أي تعليمات خاصة؟ (اختياري)"></textarea>
+        </div>
+
+        <!-- Summary -->
+        <div class="summary-box" style="margin:0 1rem 0.75rem">
+          <div class="summary-row">
+            <span>عدد الأصناف</span>
+            <span id="cart-items-count">0</span>
+          </div>
+          <div class="summary-row total">
+            <span>الإجمالي</span>
+            <span><span id="cart-total">0.00</span> ج.م</span>
+          </div>
+        </div>
+
+        <!-- Submit -->
+        <div style="padding:0 1rem 1rem">
+          <button class="btn btn-gold btn-full btn-lg" id="submit-order-btn" onclick="CartPage.submitOrder()">
+            إرسال الطلب 📲
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ╔═══════════════════════════════╗ -->
+    <!-- ║  FAVORITES PAGE               ║ -->
+    <!-- ╚═══════════════════════════════╝ -->
+    <div data-page="favorites">
+      <div class="page-header">
+        <button class="back-btn" onclick="Router.back()">◀</button>
+        <h2>المفضلة ❤️</h2>
+      </div>
+      <div class="fav-count-label" id="fav-count"></div>
+      <div id="fav-list"></div>
+    </div>
+
+    <!-- ╔═══════════════════════════════╗ -->
+    <!-- ║  ORDERS PAGE                  ║ -->
+    <!-- ╚═══════════════════════════════╝ -->
+    <div data-page="orders">
+      <div class="page-header" style="position:sticky;top:var(--header-h);z-index:50">
+        <h2>طلباتي 📋</h2>
+      </div>
+      <!-- Tabs -->
+      <div class="orders-tabs">
+        <button class="orders-tab active" data-tab="active" onclick="OrdersPage.showTab('active')">
+          الطلبات النشطة
+        </button>
+        <button class="orders-tab" data-tab="history" onclick="OrdersPage.showTab('history')">
+          السجل الكامل
+        </button>
+      </div>
+      <div class="orders-list" id="orders-list"></div>
+    </div>
+
+    <!-- ╔═══════════════════════════════╗ -->
+    <!-- ║  PROFILE PAGE                 ║ -->
+    <!-- ╚═══════════════════════════════╝ -->
+    <div data-page="profile">
+      <!-- Avatar Header -->
+      <div class="profile-avatar">
+        <div class="avatar-circle">👤</div>
+        <div class="profile-name" id="profile-name">—</div>
+        <div class="profile-shop" id="profile-shop">—</div>
+      </div>
+
+      <!-- Stats -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;padding:1rem;">
+        <div style="background:var(--gray-50);border-radius:var(--radius);padding:1rem;text-align:center;border:1px solid var(--gray-200)">
+          <div style="font-size:1.5rem;font-weight:800;color:var(--green-main)" id="profile-orders-count">0</div>
+          <div style="font-size:.78rem;color:var(--gray-500);margin-top:.2rem">طلب مُرسَل</div>
+        </div>
+        <div style="background:var(--gray-50);border-radius:var(--radius);padding:1rem;text-align:center;border:1px solid var(--gray-200)">
+          <div style="font-size:1.5rem;font-weight:800;color:#ef4444" id="profile-fav-count">0</div>
+          <div style="font-size:.78rem;color:var(--gray-500);margin-top:.2rem">منتج مفضّل</div>
+        </div>
+      </div>
+
+      <!-- Data -->
+      <div class="profile-section-title">بياناتي</div>
+      <div class="profile-row">
+        <div class="row-icon">👤</div>
+        <div class="row-content">
+          <div class="row-label">الاسم</div>
+          <div class="row-value" id="profile-row-name">—</div>
+        </div>
+      </div>
+      <div class="profile-row">
+        <div class="row-icon">🏪</div>
+        <div class="row-content">
+          <div class="row-label">المحل</div>
+          <div class="row-value" id="profile-row-shop">—</div>
+        </div>
+      </div>
+      <div class="profile-row">
+        <div class="row-icon">📞</div>
+        <div class="row-content">
+          <div class="row-label">الهاتف</div>
+          <div class="row-value" id="profile-row-phone">—</div>
+        </div>
+      </div>
+      <div class="profile-row">
+        <div class="row-icon">📍</div>
+        <div class="row-content">
+          <div class="row-label">المنطقة</div>
+          <div class="row-value" id="profile-row-area">—</div>
+        </div>
+      </div>
+
+      <div style="padding:1rem">
+        <button class="btn btn-outline btn-full" onclick="ProfilePage.openEdit()">
+          ✏️ تعديل البيانات
+        </button>
+      </div>
+
+      <!-- App info -->
+      <div class="profile-section-title">عن التطبيق</div>
+      <div class="profile-row">
+        <div class="row-icon">ℹ️</div>
+        <div class="row-content">
+          <div class="row-label">الإصدار</div>
+          <div class="row-value" id="app-version">2.0.1</div>
+        </div>
+      </div>
+
+      <div id="install-btn" style="display:none;padding:0 1rem 1rem">
+        <button class="btn btn-primary btn-full" id="pwa-install">
+          📲 تثبيت التطبيق
+        </button>
+      </div>
+
+      <!-- Settings Section -->
+      <div id="settings-section" style="padding:0 1rem 1rem"></div>
+
+      <!-- Monthly Stats -->
+      <div id="profile-month-stats"></div>
+
+    </div>
+
+  </main><!-- end #main -->
+
+  <!-- ── BOTTOM NAVIGATION ──────────────────────────────────────── -->
+  <nav id="bottom-nav">
+    <button class="nav-item" data-nav-item="home" onclick="navigateTo('home')">
+      <span class="nav-icon">🏠</span>
+      <span class="nav-label">الرئيسية</span>
+    </button>
+    <button class="nav-item" data-nav-item="favorites" onclick="navigateTo('favorites')">
+      <span class="nav-icon">❤️</span>
+      <span class="nav-label">المفضلة</span>
+    </button>
+    <button class="nav-item" data-nav-item="cart" onclick="navigateTo('cart')">
+      <span class="nav-icon" style="position:relative">
+        🛒
+        <span class="cart-badge" data-cart-count style="top:-4px;left:-4px">0</span>
+      </span>
+      <span class="nav-label">السلة</span>
+    </button>
+    <button class="nav-item" data-nav-item="orders" onclick="navigateTo('orders')">
+      <span class="nav-icon">📋</span>
+      <span class="nav-label">طلباتي</span>
+    </button>
+    <button class="nav-item" data-nav-item="profile" onclick="navigateTo('profile')">
+      <span class="nav-icon">👤</span>
+      <span class="nav-label">حسابي</span>
+    </button>
+  </nav>
+
+</div><!-- end #app -->
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!--  EDIT PROFILE MODAL                                             -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="overlay" id="edit-overlay" onclick="if(event.target===this) ProfilePage.closeEdit()">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="edit-modal-title">✏️ تعديل بياناتي</div>
+    <div class="form-group">
+      <label class="form-label">الاسم الكامل</label>
+      <input class="form-control" id="edit-name" type="text">
+    </div>
+    <div class="form-group">
+      <label class="form-label">اسم المحل</label>
+      <input class="form-control" id="edit-shop" type="text">
+    </div>
+    <div class="form-group">
+      <label class="form-label">رقم الهاتف</label>
+      <input class="form-control" id="edit-phone" type="tel">
+    </div>
+    <div class="form-group">
+      <label class="form-label">المنطقة</label>
+      <select class="form-control" id="edit-area">
+        <option value="">جاري التحميل...</option>
+      </select>
+    </div>
+    <div style="display:flex;gap:.75rem;margin-top:.5rem">
+      <button class="btn btn-ghost" style="flex:1" onclick="ProfilePage.closeEdit()">إلغاء</button>
+      <button class="btn btn-primary" style="flex:2" onclick="ProfilePage.saveEdit()">💾 حفظ</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!--  SCRIPTS (بالترتيب الصحيح)                                     -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+
+<!-- Config first -->
+<script src="config/config.js"></script>
+
+<!-- Core -->
+<script src="js/core/events.js"></script>
+<script src="js/core/state.js"></script>
+<script src="js/core/router.js"></script>
+
+<!-- Storage -->
+<script src="js/layers/storage.js"></script>
+
+<!-- API Providers -->
+<script src="js/api/providers/sheets.js"></script>
+<script src="js/api/providers/erp.js"></script>
+
+<!-- API Layer -->
+<script src="js/api/api.js"></script>
+
+<!-- Business Logic -->
+<script src="js/layers/cart.js"></script>
+<script src="js/layers/favorites.js"></script>
+
+<!-- Pages -->
+<script src="js/pages/register.js"></script>
+<script src="js/pages/home.js"></script>
+<script src="js/pages/category.js"></script>
+<script src="js/pages/search.js"></script>
+<script src="js/pages/cart.js"></script>
+<script src="js/pages/favorites.js"></script>
+<script src="js/pages/orders.js"></script>
+<script src="js/pages/profile.js"></script>
+
+<script src="js/pages/product.js"></script>
+
+<!-- App Bootstrap (last) -->
+<script src="js/app.js"></script>
+
+<!-- Service Worker -->
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(console.warn);
+  }
+</script>
+
+</body>
+</html>
