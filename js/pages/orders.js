@@ -4,6 +4,8 @@
 
 const OrdersPage = (() => {
   let activeTab = 'active';
+  let pollTimer = null;
+  const POLL_INTERVAL = 25000; // 25 ثانية
 
   const render = () => {
     showTab(activeTab);
@@ -14,8 +16,53 @@ const OrdersPage = (() => {
     document.querySelectorAll('.orders-tab').forEach(t => {
       t.classList.toggle('active', t.dataset.tab === tab);
     });
-    if (tab === 'active') renderActiveOrders();
-    else renderHistoryOrders();
+    if (tab === 'active') { renderActiveOrders(); startPolling(); }
+    else { renderHistoryOrders(); stopPolling(); }
+  };
+
+  const startPolling = () => {
+    stopPolling();
+    pollTimer = setInterval(pollActiveOrders, POLL_INTERVAL);
+  };
+
+  const stopPolling = () => {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  };
+
+  // تحديث تلقائي في الخلفية لحالة كل الطلبات النشطة دفعة واحدة
+  const pollActiveOrders = async () => {
+    // لو المستخدم مش لسه في تبويب "الطلبات النشطة"، وقف التحديث التلقائي
+    if (typeof Router !== 'undefined' && Router.getCurrentPage() !== 'orders') { stopPolling(); return; }
+    if (activeTab !== 'active') return;
+
+    const customer = API.getCustomer();
+    if (!customer) return;
+
+    const history = API.getOrdersHistory();
+    const activeIds = history
+      .filter(o => !['delivered', 'cancelled'].includes(o.status))
+      .map(o => o.id);
+    if (!activeIds.length) { stopPolling(); return; }
+
+    try {
+      const serverOrders = await SheetsProvider.getOrders(customer.id);
+      let changed = false;
+
+      serverOrders.forEach(updated => {
+        const idx = history.findIndex(o => o.id === updated.id);
+        if (idx !== -1 && history[idx].status !== updated.status) {
+          history[idx] = { ...history[idx], status: updated.status };
+          changed = true;
+        }
+      });
+
+      if (changed) {
+        Storage.set(Storage.KEYS.ORDERS_HISTORY, history);
+        if (activeTab === 'active') renderActiveOrders();
+      }
+    } catch {
+      // فشل صامت — هيحاول تاني في الدورة الجاية من غير ما يزعج المستخدم
+    }
   };
 
   const STATUS = CONFIG.ORDER_STATUS;
@@ -65,7 +112,7 @@ const OrdersPage = (() => {
           }).join('')}
         </div>
 
-        <div style="display:flex;gap:.5rem;margin-top:.5rem">
+        <div style="display:flex;gap:.5rem;margin-top:.5rem;align-items:center">
           ${isActive ? `
           <button class="btn btn-ghost btn-sm" style="flex:1"
             onclick="OrdersPage.refreshStatus('${order.id}')">
@@ -77,6 +124,7 @@ const OrdersPage = (() => {
             📋 إعادة الطلب
           </button>` : ''}
         </div>
+        ${isActive ? `<div style="font-size:.7rem;color:var(--gray-400);margin-top:.35rem">🔄 بيتحدث تلقائيًا كل شوية</div>` : ''}
       </div>
     `;
   };
