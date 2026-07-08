@@ -20,9 +20,16 @@ const API = (() => {
   const withCache = async (cacheKey, ttl, fetchFn) => {
     const cached = Storage.getWithTTL(cacheKey, ttl);
     if (cached) return cached;
-    const data = await fetchFn();
-    Storage.set(cacheKey, data);
-    return data;
+    try {
+      const data = await fetchFn();
+      Storage.set(cacheKey, data);
+      return data;
+    } catch (e) {
+      // فشل الجلب (تايم آوت/شبكة بطيئة) — استخدم آخر نسخة متخزنة حتى لو قديمة، أفضل من شاشة فاضية
+      const stale = Storage.get(cacheKey);
+      if (stale) return stale;
+      throw e;
+    }
   };
 
   // ─── توليد ID فريد ─────────────────────────────────────────────
