@@ -24,7 +24,7 @@ const SheetsProvider = (() => {
   const getAction = async (action, params = '') => {
     const url = `${APPS_SCRIPT_URL}?action=${action}${params}`;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 12000);
+    const timer = setTimeout(() => controller.abort(), 20000);
     try {
       const res = await fetch(url, { signal: controller.signal });
       clearTimeout(timer);
