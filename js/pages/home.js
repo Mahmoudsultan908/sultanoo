@@ -16,16 +16,27 @@ const HomePage = (() => {
   const loadSections = async () => {
     renderSkeletons();
     try {
-      const [featured, bestsellers, categories, banners] = await Promise.all([
+      const [featuredR, bestsellersR, categoriesR, bannersR] = await Promise.allSettled([
         API.getFeatured(),
         API.getBestsellers(),
         API.getMainCategories(),
         API.getBanners(),
       ]);
+      const featured    = featuredR.status    === 'fulfilled' ? featuredR.value    : [];
+      const bestsellers = bestsellersR.status === 'fulfilled' ? bestsellersR.value : [];
+      const categories  = categoriesR.status  === 'fulfilled' ? categoriesR.value  : [];
+      const banners     = bannersR.status     === 'fulfilled' ? bannersR.value     : [];
+
       renderBanners(banners);
       renderFeatured(featured);
       renderBestsellers(bestsellers);
-      renderCategories(categories);
+
+      // الأقسام هي الأهم — لو هي فشلت فعلاً (مفيش كاش قديم ولا جديد) وريها رسالة الخطأ
+      if (categoriesR.status === 'fulfilled') {
+        renderCategories(categories);
+      } else {
+        throw categoriesR.reason;
+      }
     } catch (e) {
       console.error('[Home] load error:', e);
       const el = document.getElementById('home-categories');
