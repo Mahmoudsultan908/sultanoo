@@ -17,19 +17,28 @@ const API = (() => {
   };
 
   // Cache helper داخلي
+  const _inFlight = {};
   const withCache = async (cacheKey, ttl, fetchFn) => {
     const cached = Storage.getWithTTL(cacheKey, ttl);
     if (cached) return cached;
-    try {
-      const data = await fetchFn();
-      Storage.set(cacheKey, data);
-      return data;
-    } catch (e) {
-      // فشل الجلب (تايم آوت/شبكة بطيئة) — استخدم آخر نسخة متخزنة حتى لو قديمة، أفضل من شاشة فاضية
-      const stale = Storage.get(cacheKey);
-      if (stale) return stale;
-      throw e;
-    }
+    // لو فيه طلب شغال بالفعل لنفس المفتاح، استنى نتيجته بدل ما تبعت طلب مكرر
+    if (_inFlight[cacheKey]) return _inFlight[cacheKey];
+    const promise = (async () => {
+      try {
+        const data = await fetchFn();
+        Storage.set(cacheKey, data);
+        return data;
+      } catch (e) {
+        // فشل الجلب (تايم آوت/شبكة بطيئة) — استخدم آخر نسخة متخزنة حتى لو قديمة، أفضل من شاشة فاضية
+        const stale = Storage.get(cacheKey);
+        if (stale) return stale;
+        throw e;
+      } finally {
+        delete _inFlight[cacheKey];
+      }
+    })();
+    _inFlight[cacheKey] = promise;
+    return promise;
   };
 
   // ─── توليد ID فريد ─────────────────────────────────────────────
