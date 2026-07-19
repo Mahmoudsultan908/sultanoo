@@ -77,11 +77,11 @@ const RegisterPage = (() => {
         Storage.set(Storage.KEYS.CUSTOMER,   existing);
         Storage.set(Storage.KEYS.REGISTERED, true);
 
-        // ── استرجاع الطلبات القديمة من الشيت ──
+        // ── استرجاع الطلبات القديمة ──
         try {
-          const sheetOrders = await SheetsProvider.getOrders(existing.id);
-          if (sheetOrders && sheetOrders.length > 0) {
-            Storage.set(Storage.KEYS.ORDERS_HISTORY, sheetOrders);
+          const oldOrders = await API.getOrders(existing.id);
+          if (oldOrders && oldOrders.length > 0) {
+            Storage.set(Storage.KEYS.ORDERS_HISTORY, oldOrders);
           }
         } catch {}
 

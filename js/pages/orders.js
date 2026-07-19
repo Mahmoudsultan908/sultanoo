@@ -45,7 +45,7 @@ const OrdersPage = (() => {
     if (!activeIds.length) { stopPolling(); return; }
 
     try {
-      const serverOrders = await SheetsProvider.getOrders(customer.id);
+      const serverOrders = await API.getOrders(customer.id);
       let changed = false;
 
       serverOrders.forEach(updated => {
@@ -196,7 +196,7 @@ const OrdersPage = (() => {
     if (!customer) return;
     showToast('⏳ جاري التحديث...');
     try {
-      const serverOrders = await SheetsProvider.getOrders(customer.id);
+      const serverOrders = await API.getOrders(customer.id);
       const updated = serverOrders.find(o => o.id === orderId);
       if (!updated) { showToast('⚠️ الطلب غير موجود'); return; }
 

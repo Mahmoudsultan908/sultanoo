@@ -168,6 +168,11 @@ const API = (() => {
     return Storage.get(Storage.KEYS.ORDERS_HISTORY) || [];
   };
 
+  // حالة الطلبات الحيّة من السيرفر (بعكس getOrdersHistory اللي بترجع من
+  // التخزين المحلي بس) — عن طريق الـ Provider الحالي، مش SheetsProvider
+  // مباشرة، عشان يشتغل صح بعد التحويل لـ ERP
+  const getOrders = (customerId) => getProvider().getOrders(customerId);
+
   const getLastOrder = () => {
     return Storage.get(Storage.KEYS.LAST_ORDER) || null;
   };
@@ -186,7 +191,14 @@ const API = (() => {
       erp_customer_id: '',
     };
 
-    await getProvider().registerCustomer(customerData);
+    // لو الـ Provider رجّع id حقيقي (زي ERPProvider اللي بيرجّع uuid العميل
+    // الحقيقي في سلطان — سواء جديد أو اتربط برقم تليفون موجود)، استخدمه
+    // بدل الـ id المحلي المؤقت — كل نداء تاني (submitOrder، getOrders...)
+    // محتاج الـ id ده يكون حقيقي عشان يشتغل. SheetsProvider مش بيرجّع id،
+    // فالسلوك القديم فاضل زي ما هو من غيره.
+    const providerResult = await getProvider().registerCustomer(customerData);
+    if (providerResult?.id) customerData.id = providerResult.id;
+
     Storage.set(Storage.KEYS.CUSTOMER, customerData);
     Storage.set(Storage.KEYS.REGISTERED, true);
     return customerData;
@@ -303,7 +315,7 @@ const API = (() => {
     searchProducts, getProductById,
     getCategories, getMainCategories, getSubcategories,
     getAreas, getBanners,
-    submitOrder, getOrdersHistory, getLastOrder,
+    submitOrder, getOrdersHistory, getLastOrder, getOrders,
     registerCustomer, getCustomer, isRegistered, updateCustomer,
     getCustomerByPhone, updateCustomerFavorites,
     sendWhatsApp,
