@@ -65,7 +65,19 @@ const CartPage = (() => {
       liveSettings = liveSettings || API.getSettings() || {};
     }
     const minOrderVal = liveSettings?.min_order_amount ?? liveSettings?.minimum_order;
-    const minAmount = Number(minOrderVal) || CONFIG.ORDER?.MIN_AMOUNT || 0;
+    let minAmount = Number(minOrderVal) || CONFIG.ORDER?.MIN_AMOUNT || 0;
+
+    // لو منطقة العميل ليها حد أدنى خاص بيها (من "إدارة المناطق" في سلطان ERP)،
+    // هو اللي بيتطبّق بدل الحد العام
+    try {
+      const customer = API.getCustomer();
+      if (customer?.area_id) {
+        const areas = await API.getAreas();
+        const myArea = areas.find(a => a.id === customer.area_id);
+        if (myArea?.min_order_amount > 0) minAmount = myArea.min_order_amount;
+      }
+    } catch {}
+
     if (minAmount > 0 && Cart.getTotal() < minAmount) {
       showToast(`⚠️ الحد الأدنى للطلب ${minAmount} ج.م — إجماليك الحالي ${Cart.getTotal().toFixed(0)} ج.م`);
       return;

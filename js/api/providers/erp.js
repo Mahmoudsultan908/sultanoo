@@ -47,7 +47,13 @@ const ERPProvider = (() => {
     is_active:  row.is_active !== false,
   });
 
-  const mapArea = (row) => ({ id: row.id, name: row.name || '' });
+  const mapArea = (row) => ({ id: row.id, name: row.name || '', min_order_amount: Number(row.min_order_amount) || 0 });
+
+  const mapBanner = (row) => ({
+    id: row.id, title: row.title || '', subtitle: row.subtitle || '',
+    image_url: row.image_url || '', bg_color: row.bg_color || '#1a4731',
+    link_to: row.link_to || '', is_active: true, sort_order: Number(row.sort_order) || 99,
+  });
 
   const mapCustomer = (row) => row ? ({
     id:            row.id,
@@ -157,8 +163,16 @@ const ERPProvider = (() => {
 
     async updateCustomerFavorites() { /* مفيش تخزين مفضّلة في سلطان ERP حالياً */ },
 
-    async getBanners() { return []; },
+    async getBanners() {
+      const { data, error } = await sb.rpc('fn_sultano_get_banners');
+      if (error) throw error;
+      return (data || []).map(mapBanner);
+    },
 
-    async getSettings() { return {}; },
+    async getSettings() {
+      const { data, error } = await sb.rpc('fn_sultano_get_settings');
+      if (error) throw error;
+      return { min_order_amount: Number(data?.[0]?.min_order_amount) || 0 };
+    },
   };
 })();

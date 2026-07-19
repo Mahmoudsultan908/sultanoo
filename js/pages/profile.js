@@ -26,6 +26,29 @@ const ProfilePage = (() => {
     document.getElementById('profile-orders-count').textContent = ordersCount;
     document.getElementById('profile-fav-count').textContent    = Favorites.getCount();
 
+    // كشف حساب العميل (الرصيد الحالي + حد الائتمان)
+    const statementEl = document.getElementById('profile-statement');
+    if (statementEl && customer?.id) {
+      API.getCustomerAccount(customer.id).then(acc => {
+        if (!acc) { statementEl.innerHTML = ''; return; }
+        const balance = Number(acc.balance) || 0;
+        statementEl.innerHTML = `
+          <div class="profile-card" style="margin:0 1rem 1rem">
+            <div class="profile-card-header">🧾 كشف حسابك</div>
+            <div class="profile-rows">
+              <div class="profile-row">
+                <span class="row-label">الرصيد الحالي</span>
+                <span class="row-value" style="color:${balance>0?'var(--danger)':'var(--green-main)'}">${balance.toFixed(2)} ج.م${balance>0?' (عليك)':''}</span>
+              </div>
+              <div class="profile-row">
+                <span class="row-label">حد الائتمان</span>
+                <span class="row-value">${Number(acc.credit_limit||0).toFixed(2)} ج.م</span>
+              </div>
+            </div>
+          </div>`;
+      }).catch(() => { statementEl.innerHTML = ''; });
+    }
+
     // إحصائيات الشهر
     const statsEl = document.getElementById('profile-month-stats');
     if (statsEl) {

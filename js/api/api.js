@@ -173,6 +173,12 @@ const API = (() => {
   // مباشرة، عشان يشتغل صح بعد التحويل لـ ERP
   const getOrders = (customerId) => getProvider().getOrders(customerId);
 
+  // كشف حساب العميل (الرصيد + حد الائتمان) — للعرض في صفحة البروفايل فقط
+  const getCustomerAccount = async (customerId) => {
+    try { return await getProvider().getCustomerAccount(customerId); }
+    catch { return null; }
+  };
+
   const getLastOrder = () => {
     return Storage.get(Storage.KEYS.LAST_ORDER) || null;
   };
@@ -315,7 +321,7 @@ const API = (() => {
     searchProducts, getProductById,
     getCategories, getMainCategories, getSubcategories,
     getAreas, getBanners,
-    submitOrder, getOrdersHistory, getLastOrder, getOrders,
+    submitOrder, getOrdersHistory, getLastOrder, getOrders, getCustomerAccount,
     registerCustomer, getCustomer, isRegistered, updateCustomer,
     getCustomerByPhone, updateCustomerFavorites,
     sendWhatsApp,

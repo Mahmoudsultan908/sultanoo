@@ -64,7 +64,7 @@ const HomePage = (() => {
             style="display:${i===0?'flex':'none'};align-items:center;min-height:110px;
                    padding:1.1rem 1.25rem;background:${b.bg_color || '#1a4731'};
                    border-radius:14px;gap:1rem;${b.link_to ? 'cursor:pointer' : ''}"
-            ${b.link_to ? `onclick="navigateTo('category',{id:'${b.link_to}'}"` : ''}>
+            ${b.link_to ? `onclick="navigateTo('category', {id:'${b.link_to}'})"` : ''}>
             <div style="flex:1;min-width:0">
               <div style="font-size:1rem;font-weight:800;color:#fff;line-height:1.3">${b.title}</div>
               ${b.subtitle ? `<div style="font-size:.78rem;color:rgba(255,255,255,.82);margin-top:.3rem">${b.subtitle}</div>` : ''}

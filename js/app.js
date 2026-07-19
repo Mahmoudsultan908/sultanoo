@@ -193,6 +193,27 @@ const App = {
       }
     }
 
+    // 5c. تحديث حالة الطلبات صامتاً في الخلفية — من أول ما التطبيق يفتح،
+    //     مش لما المستخدم يفتح تبويب "طلباتي" بس (نفس منطق تحديث بيانات
+    //     العميل فوق، بس للطلبات)
+    if (API.isRegistered()) {
+      const c = API.getCustomer();
+      if (c?.id) {
+        API.getOrders(c.id).then(serverOrders => {
+          const history = API.getOrdersHistory();
+          let changed = false;
+          serverOrders.forEach(updated => {
+            const idx = history.findIndex(o => o.id === updated.id);
+            if (idx !== -1 && history[idx].status !== updated.status) {
+              history[idx] = { ...history[idx], status: updated.status };
+              changed = true;
+            }
+          });
+          if (changed) Storage.set(Storage.KEYS.ORDERS_HISTORY, history);
+        }).catch(() => {});
+      }
+    }
+
     // 6. تحقق التسجيل
     if (!API.isRegistered()) {
       await RegisterPage.init();
