@@ -9,7 +9,7 @@ const CONFIG = {
     version: '2.0.1',
   },
 
-  DATA_PROVIDER: 'sheets',
+  DATA_PROVIDER: 'erp',
 
   SHEETS: {
     SPREADSHEET_ID:  '1Tpg2lLTB-K5tAtwS2Emtk5SpvJgdh1CAXIHlyhoPqtw',
