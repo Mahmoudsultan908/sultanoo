@@ -179,6 +179,35 @@ const App = {
     // 5. تحميل الإعدادات من الشيت (في الخلفية)
     API.initSettings().catch(() => {});
 
+    // 5a. ★ توفيق مهم لمرة واحدة: أي عميل اتسجّل قبل التحويل لـ ERP (زمن
+    //     الشيت) عنده id محلي وهمي (زي CUS-XXXX-YYYY) مش uuid حقيقي في
+    //     سلطان ERP. بما إن isRegistered() already true، التسجيل ما بيتكررش
+    //     تاني، فيفضل عالق بالـ id الوهمي ده — وده بيكسر كل حاجة محتاجة
+    //     الـ id (تحميل المنتجات بالسعر الصح، إرسال الطلب...) لأن الـ RPC
+    //     بيتوقع uuid حقيقي. الإصلاح: لو الـ id مش شكل uuid، اربطه فورًا
+    //     بنفس رقم تليفونه على عميل سلطان ERP حقيقي (أو سجّله لو مالوش
+    //     نظير) — من غير ما المستخدم يحس أو يتطلب منه يعيد أي بيانات.
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (API.isRegistered()) {
+      const c = API.getCustomer();
+      const hasRealId = c?.id && UUID_RE.test(c.id);
+      if (c && !hasRealId && c.phone) {
+        try {
+          let real = await API.getCustomerByPhone(c.phone);
+          if (!real) {
+            real = await API.registerCustomer({
+              name: c.name, shop_name: c.shop_name, phone: c.phone,
+              area_id: c.area_id, area_name: c.area_name,
+            });
+          } else {
+            Storage.set(Storage.KEYS.CUSTOMER, { ...c, ...real });
+          }
+        } catch (e) {
+          console.warn('[Migrate] فشل ربط العميل بـ id حقيقي:', e);
+        }
+      }
+    }
+
     // 5b. تحديث بيانات العميل صامتاً (VIP + customer_type)
     if (API.isRegistered()) {
       const c = API.getCustomer();
