@@ -5,9 +5,9 @@
  * Network-first للبيانات
  */
 
-const CACHE_NAME    = 'sultan-v3.0.1';
-const STATIC_CACHE  = 'sultan-static-v3.0.0';
-const DATA_CACHE    = 'sultan-data-v3.0.0';
+const CACHE_NAME    = 'sultan-v3.1.0';
+const STATIC_CACHE  = 'sultan-static-v3.1.0';
+const DATA_CACHE    = 'sultan-data-v3.1.0';
 
 // الملفات التي تُحفظ دائماً offline
 const STATIC_ASSETS = [
@@ -27,6 +27,7 @@ const STATIC_ASSETS = [
   './js/layers/cart.js',
   './js/layers/favorites.js',
   './js/api/providers/sheets.js',
+  './js/api/providers/supabase-client.js',
   './js/api/providers/erp.js',
   './js/api/api.js',
   './js/pages/register.js',
