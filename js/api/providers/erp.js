@@ -94,6 +94,14 @@ const ERPProvider = (() => {
       return (data || []).map(mapCategory);
     },
 
+    // "الأقسام الفرعية" في سلطان ERP هي الشركات المصنّعة (product_companies) —
+    // بنرجّع بس اللي عندها صنف فعّال جوه القسم الرئيسي ده تحديدًا
+    async getSubcategories(categoryId) {
+      const { data, error } = await sb.rpc('fn_sultano_get_subcategories', { p_category_id: categoryId });
+      if (error) throw error;
+      return (data || []).map(mapCategory);
+    },
+
     async getAreas() {
       const { data, error } = await sb.rpc('fn_sultano_get_areas');
       if (error) throw error;

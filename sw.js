@@ -5,9 +5,9 @@
  * Network-first للبيانات
  */
 
-const CACHE_NAME    = 'sultan-v3.1.2';
-const STATIC_CACHE  = 'sultan-static-v3.1.2';
-const DATA_CACHE    = 'sultan-data-v3.1.2';
+const CACHE_NAME    = 'sultan-v3.1.3';
+const STATIC_CACHE  = 'sultan-static-v3.1.3';
+const DATA_CACHE    = 'sultan-data-v3.1.3';
 
 // الملفات التي تُحفظ دائماً offline
 const STATIC_ASSETS = [

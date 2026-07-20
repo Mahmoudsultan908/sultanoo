@@ -107,6 +107,13 @@ const API = (() => {
   };
 
   const getSubcategories = async (parentId) => {
+    // Provider بيدعم أقسام فرعية حقيقية (زي ERPProvider اللي بيرجّع الشركات
+    // المصنّعة كأقسام فرعية) — لو مش موجودة (SheetsProvider)، ارجع للسلوك
+    // القديم: فلترة من نفس قايمة الأقسام بالـ parent_id
+    try {
+      const sub = await getProvider().getSubcategories(parentId);
+      if (Array.isArray(sub)) return sub.sort((a, b) => a.sort_order - b.sort_order);
+    } catch {}
     const all = await getCategories();
     return all.filter(c => c.parent_id === parentId).sort((a, b) => a.sort_order - b.sort_order);
   };
