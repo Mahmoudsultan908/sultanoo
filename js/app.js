@@ -195,15 +195,25 @@ const App = {
         try {
           let real = await API.getCustomerByPhone(c.phone);
           if (!real) {
+            // ★ c.area_id لو موجود ده id منطقة من عصر الشيت — مش uuid حقيقي
+            //   في customer_regions، فبعته زي ما هو كان بيكسر الـ RPC بصمت
+            //   (خطأ تحويل نوع) قبل حتى ما يوصل لمنطق التسجيل — تسيبه null
+            //   أسلم من غير ما يوقف التسجيل، والأدمن يظبط المنطقة بعدين
+            const safeAreaId = c.area_id && UUID_RE.test(c.area_id) ? c.area_id : null;
             real = await API.registerCustomer({
               name: c.name, shop_name: c.shop_name, phone: c.phone,
-              area_id: c.area_id, area_name: c.area_name,
+              area_id: safeAreaId, area_name: c.area_name,
             });
           } else {
             Storage.set(Storage.KEYS.CUSTOMER, { ...c, ...real });
           }
         } catch (e) {
-          console.warn('[Migrate] فشل ربط العميل بـ id حقيقي:', e);
+          console.warn('[Migrate] فشل ربط العميل بـ id حقيقي، هيتطلب تسجيل من جديد:', e);
+          // لو الإصلاح الصامت فشل لأي سبب تاني، امسح علامة "مسجّل" بدل ما
+          //   يفضل عالق للأبد على id مكسور — المرة الجاية يفتح التطبيق
+          //   هيشوف شاشة التسجيل تاني (فورم فاضي، هيكتب بياناته تاني).
+          //   في زرار "إعادة التسجيل" يدوي كمان دلوقتي من صفحة البروفايل.
+          Storage.remove(Storage.KEYS.REGISTERED);
         }
       }
     }

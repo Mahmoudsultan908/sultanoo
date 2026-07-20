@@ -150,5 +150,17 @@ const ProfilePage = (() => {
     showToast('✅ تم تحديث الإعدادات');
   };
 
-  return { render, openEdit, closeEdit, saveEdit, refreshSettings };
+  // مفيش خاصية "تسجيل خروج" حقيقية (سلطانو مربوط بالتليفون مش بحساب/كلمة
+  // سر)، بس ده زرار طوارئ يمسح التسجيل المحلي (بيانات العميل + السلة +
+  // المفضلة) ويرجّع المستخدم لشاشة التسجيل من جديد — مفيد لو حصل خلل زي
+  // اللي حصل بعد التحويل لـ ERP (عميل قديم عالق بـ id مكسور من غير طريقة
+  // يصلحه بنفسه)
+  const resetRegistration = () => {
+    if (!confirm('هيتم مسح تسجيلك الحالي وترجع لشاشة التسجيل من الأول. متابعة؟')) return;
+    Storage.remove(Storage.KEYS.CUSTOMER);
+    Storage.remove(Storage.KEYS.REGISTERED);
+    location.reload();
+  };
+
+  return { render, openEdit, closeEdit, saveEdit, refreshSettings, resetRegistration };
 })();

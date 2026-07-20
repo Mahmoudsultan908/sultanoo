@@ -6,7 +6,7 @@ const CONFIG = {
   APP: {
     name_ar: 'سلطان للمواد الغذائية',
     name_en: 'Sultan Foodstuffs',
-    version: '2.0.1',
+    version: '2.1.0-erp',
   },
 
   DATA_PROVIDER: 'erp',
