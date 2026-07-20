@@ -301,6 +301,17 @@ const API = (() => {
   };
 
   const getSettings = () => Storage.get(SETTINGS_CACHE_KEY) || {};
+
+  // مسح الكاش المحلي للمنتجات/الأقسام/المناطق/الإعدادات بس — من غير ما يمسح
+  // تسجيل العميل — مفيد لو الأسعار/الأصناف/الحدود اتغيّرت من سلطان ERP
+  // والعميل لسه شايف نسخة قديمة متخزّنة عنده
+  const clearDataCache = () => {
+    Storage.remove(Storage.KEYS.CACHE_PRODUCTS);
+    Storage.remove(Storage.KEYS.CACHE_CATS);
+    Storage.remove(Storage.KEYS.CACHE_AREAS);
+    Storage.remove(SETTINGS_CACHE_KEY);
+    Storage.remove(SETTINGS_CACHE_KEY + '_ts');
+  };
   const sendWhatsApp = (order, items) => {
     const customer = getCustomer();
     let msg = `🛒 *طلب جديد — سلطان للمواد الغذائية*\n`;
@@ -332,7 +343,7 @@ const API = (() => {
     registerCustomer, getCustomer, isRegistered, updateCustomer,
     getCustomerByPhone, updateCustomerFavorites,
     sendWhatsApp,
-    initSettings, getSettings,
+    initSettings, getSettings, clearDataCache,
     generateId,
   };
 })();

@@ -162,5 +162,14 @@ const ProfilePage = (() => {
     location.reload();
   };
 
-  return { render, openEdit, closeEdit, saveEdit, refreshSettings, resetRegistration };
+  // أخف من "إعادة التسجيل" — بيمسح بس نسخة المنتجات/الأقسام/المناطق/الإعدادات
+  // المخزّنة محليًا (من غير ما يمس تسجيل العميل)، مفيد لو الأسعار أو الأصناف
+  // أو الحدود اتغيّرت من سلطان ERP والعميل لسه شايف نسخة قديمة
+  const refreshData = () => {
+    API.clearDataCache();
+    showToast('✅ هيتم تحديث البيانات دلوقتي');
+    location.reload();
+  };
+
+  return { render, openEdit, closeEdit, saveEdit, refreshSettings, resetRegistration, refreshData };
 })();
