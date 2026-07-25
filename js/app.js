@@ -281,10 +281,15 @@ const App = {
 
       const overlay = document.createElement('div');
       overlay.id = 'popup-banner-overlay';
-      // ★ width/height 100vw/100vh + max-width/max-height صريحة (مش بس inset:0)
-      //   عشان تضمن حجم شاشة الموبايل بالظبط مهما كان فيه عنصر جد فوق فى الشجرة
-      //   بيغيّر containing block بتاع position:fixed (transform/filter مثلاً).
-      overlay.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;max-width:100vw;max-height:100vh;z-index:8500;background:#1a4731;overflow:hidden';
+      // ★ inset:0 لوحدها من غير width/height صريحة — نفس الباترن المستخدم
+      //   بالظبط فى #splash-screen و#register-screen (شغالين صح من غير شكوى).
+      //   السبب الحقيقي وراء "أكبر من الشاشة": 100vh على المحمول بتتحسب
+      //   بارتفاع الشاشة الكامل من غير شريط عنوان المتصفح — أطول من
+      //   المساحة الظاهرة فعليًا، فالبانر كان بيمتد تحت حافة الشاشة الحقيقية.
+      //   إضافة width:100vw/height:100vh فى التعديل اللي فات كانت هي نفسها
+      //   سبب المشكلة (مكنتش ظاهرة فى أداة الاختبار لأنها مش بتحاكي شريط
+      //   عنوان متصفح الموبايل الديناميكي).
+      overlay.style.cssText = 'position:fixed;inset:0;z-index:8500;background:#1a4731;overflow:hidden';
       overlay.innerHTML = `
         <img src="${popup.image_url}" alt="${popup.title}"
           style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain"
