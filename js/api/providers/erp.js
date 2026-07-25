@@ -53,6 +53,7 @@ const ERPProvider = (() => {
     id: row.id, title: row.title || '', subtitle: row.subtitle || '',
     image_url: row.image_url || '', bg_color: row.bg_color || '#1a4731',
     link_to: row.link_to || '', is_active: true, sort_order: Number(row.sort_order) || 99,
+    display_type: row.display_type || 'carousel',
   });
 
   const mapCustomer = (row) => row ? ({

@@ -51,8 +51,9 @@ const HomePage = (() => {
     }
   };
 
-  const renderBanners = (banners) => {
+  const renderBanners = (allBanners) => {
     const el = document.getElementById('home-banners');
+    const banners = (allBanners || []).filter(b => b.display_type !== 'popup');
     if (!el || !banners.length) { if (el) el.style.display = 'none'; return; }
     el.style.display = 'block';
     let current = 0;
@@ -61,19 +62,22 @@ const HomePage = (() => {
       <div style="position:relative;overflow:hidden;border-radius:14px;margin:0 1rem 1rem">
         ${banners.map((b, i) => `
           <div class="banner-slide" data-slide="${i}"
-            style="display:${i===0?'flex':'none'};align-items:center;min-height:110px;
-                   padding:1.1rem 1.25rem;background:${b.bg_color || '#1a4731'};
-                   border-radius:14px;gap:1rem;${b.link_to ? 'cursor:pointer' : ''}"
+            style="display:${i===0?'flex':'none'};position:relative;min-height:150px;
+                   background:${b.bg_color || '#1a4731'};
+                   border-radius:14px;${b.link_to ? 'cursor:pointer' : ''}"
             ${b.link_to ? `onclick="navigateTo('category', {id:'${b.link_to}'})"` : ''}>
-            <div style="flex:1;min-width:0">
-              <div style="font-size:1rem;font-weight:800;color:#fff;line-height:1.3">${b.title}</div>
-              ${b.subtitle ? `<div style="font-size:.78rem;color:rgba(255,255,255,.82);margin-top:.3rem">${b.subtitle}</div>` : ''}
-            </div>
             ${b.image_url
               ? `<img src="${b.image_url}" alt="${b.title}"
-                   style="height:80px;width:80px;object-fit:contain;border-radius:8px;flex-shrink:0"
+                   style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:14px"
                    loading="lazy" onerror="this.style.display='none'">`
               : ''}
+            <div style="position:absolute;top:0;right:0;left:0;padding:.7rem .9rem;
+                        background:linear-gradient(to bottom, rgba(0,0,0,.6), transparent);
+                        border-radius:14px 14px 0 0">
+              <div style="font-size:.85rem;font-weight:800;color:#fff;line-height:1.3;
+                          text-shadow:0 1px 3px rgba(0,0,0,.5)">${b.title}</div>
+              ${b.subtitle ? `<div style="font-size:.7rem;color:rgba(255,255,255,.9);margin-top:.2rem;text-shadow:0 1px 3px rgba(0,0,0,.5)">${b.subtitle}</div>` : ''}
+            </div>
           </div>`).join('')}
         ${banners.length > 1 ? `
           <div style="position:absolute;bottom:7px;left:50%;transform:translateX(-50%);
@@ -102,7 +106,7 @@ const HomePage = (() => {
 
   const renderSkeletons = () => {
     const featEl = document.getElementById('home-featured');
-    if (featEl) featEl.innerHTML = Array(4).fill(`<div class="skeleton" style="width:200px;height:180px;border-radius:var(--radius-lg);flex-shrink:0"></div>`).join('');
+    if (featEl) featEl.innerHTML = Array(4).fill(`<div class="skeleton" style="width:100px;height:90px;border-radius:var(--radius-lg);flex-shrink:0"></div>`).join('');
   };
 
   const renderFeatured = (products) => {
@@ -131,7 +135,7 @@ const HomePage = (() => {
     el.innerHTML = products.slice(0, 10).map(p => renderProductCard(p)).join('');
     el.className = 'scroll-row';
     el.querySelectorAll('.product-card').forEach(c => {
-      c.style.width = '160px';
+      c.style.width = '80px';
       c.style.flexShrink = '0';
     });
   };

@@ -261,11 +261,37 @@ const App = {
     // 7. الانطلاق للرئيسية
     Router.navigate('home');
 
+    // 7a. بانر إعلاني بحجم الشاشة — مرة واحدة لكل فتحة تطبيق (بند 13)
+    this.showPopupBanner();
+
     // 8. Offline detection
     this.setupOffline();
 
     // 9. زر الرجوع في الأندرويد
     this.setupBackButton();
+  },
+
+  async showPopupBanner() {
+    if (sessionStorage.getItem('popupBannerShown')) return;
+    try {
+      const banners = await API.getBanners();
+      const popup = (banners || []).find(b => b.display_type === 'popup' && b.image_url);
+      if (!popup) return;
+      sessionStorage.setItem('popupBannerShown', '1');
+
+      const overlay = document.createElement('div');
+      overlay.id = 'popup-banner-overlay';
+      overlay.style.cssText = 'position:fixed;inset:0;z-index:8500;background:#1a4731';
+      overlay.innerHTML = `
+        <img src="${popup.image_url}" alt="${popup.title}"
+          style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"
+          ${popup.link_to ? `onclick="navigateTo('category', {id:'${popup.link_to}'}); document.getElementById('popup-banner-overlay').remove()"` : ''}>
+        <button onclick="document.getElementById('popup-banner-overlay').remove()"
+          style="position:absolute;top:calc(env(safe-area-inset-top,0px) + .75rem);left:.75rem;
+                 width:36px;height:36px;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;
+                 border:none;font-size:1.15rem;line-height:1;cursor:pointer">✕</button>`;
+      document.body.appendChild(overlay);
+    } catch (e) { console.warn('[PopupBanner] فشل التحميل:', e); }
   },
 
   async showSplash() {
