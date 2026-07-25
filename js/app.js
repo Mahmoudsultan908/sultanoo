@@ -281,16 +281,21 @@ const App = {
 
       const overlay = document.createElement('div');
       overlay.id = 'popup-banner-overlay';
-      overlay.style.cssText = 'position:fixed;inset:0;z-index:8500;background:#1a4731';
+      // ★ width/height 100vw/100vh + max-width/max-height صريحة (مش بس inset:0)
+      //   عشان تضمن حجم شاشة الموبايل بالظبط مهما كان فيه عنصر جد فوق فى الشجرة
+      //   بيغيّر containing block بتاع position:fixed (transform/filter مثلاً).
+      overlay.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;max-width:100vw;max-height:100vh;z-index:8500;background:#1a4731;overflow:hidden';
       overlay.innerHTML = `
         <img src="${popup.image_url}" alt="${popup.title}"
-          style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"
+          style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain"
           ${popup.link_to ? `onclick="navigateTo('category', {id:'${popup.link_to}'}); document.getElementById('popup-banner-overlay').remove()"` : ''}>
         <button onclick="document.getElementById('popup-banner-overlay').remove()"
           style="position:absolute;top:calc(env(safe-area-inset-top,0px) + .75rem);left:.75rem;
                  width:36px;height:36px;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;
                  border:none;font-size:1.15rem;line-height:1;cursor:pointer">✕</button>`;
       document.body.appendChild(overlay);
+      // ★ يقفل لوحده بعد 10 ثوانى لو المستخدم مضغطش ✕
+      setTimeout(() => { document.getElementById('popup-banner-overlay')?.remove(); }, 10000);
     } catch (e) { console.warn('[PopupBanner] فشل التحميل:', e); }
   },
 
