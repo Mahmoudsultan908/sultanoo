@@ -127,9 +127,41 @@ const Cart = (() => {
 
   const onChange = (fn) => listeners.push(fn);
 
+  // ── مطابقة السلة مع المخزون الحيّ ──
+  // المشكلة: quantity/max_qty بيتسجّلوا في السلة لحظة الإضافة وبيفضلوا زي
+  // ما هما حتى لو المخزون اتغيّر بعد كده (عميل تاني اشترى نفس الصنف، أو
+  // كان آخر قطعة). بيتنادى بـ fresh product list (API.getProducts(true))
+  // من صفحة السلة عند الفتح وقبل الإرسال — بيرجّع وصف بالتغييرات اللي
+  // حصلت (لو حصلت) عشان تتعرض للعميل بدل ما يتفاجئ بيها بعد الإرسال.
+  const validateStock = (freshProducts) => {
+    const byId = new Map(freshProducts.map(p => [p.id, p]));
+    const changes = [];
+    let anyChange = false;
+
+    items = items.filter(item => {
+      const fresh = byId.get(item.id);
+      const available = fresh ? Number(fresh.stock_qty) || 0 : 0;
+
+      if (!fresh || !fresh.is_available || available <= 0) {
+        changes.push(`🚫 "${item.name_ar}" خلص من المخزون — اتشال من السلة`);
+        anyChange = true;
+        return false; // remove
+      }
+      if (available < item.quantity) {
+        changes.push(`⚠️ "${item.name_ar}" متاح منه ${available} ${item.unit} بس — الكمية اتعدّلت من ${item.quantity} لـ ${available}`);
+        item.quantity = available;
+        anyChange = true;
+      }
+      return true;
+    });
+
+    if (anyChange) notify();
+    return { changed: anyChange, messages: changes };
+  };
+
   return {
     init, add, remove, updateQty, getQty,
     clear, getItems, getTotal, getCount, isEmpty,
-    loadLastOrder, onChange,
+    loadLastOrder, onChange, validateStock,
   };
 })();

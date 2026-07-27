@@ -8,6 +8,17 @@ const CartPage = (() => {
     Cart.onChange(() => {
       if (Router.getCurrentPage() === 'cart') renderItems();
     });
+    // مطابقة هادئة مع المخزون الحيّ لحظة فتح السلة — لو صنف خلص وهو قاعد
+    // في سلة عميل من زمان، يبان له على طول بدل ما يتفاجئ وقت الإرسال
+    if (!Cart.isEmpty()) checkStockSilently();
+  };
+
+  const checkStockSilently = async () => {
+    try {
+      const fresh = await API.getProducts(true);
+      const { changed, messages } = Cart.validateStock(fresh);
+      if (changed) showToast(messages.join(' • '), 5000);
+    } catch {}
   };
 
   const renderItems = () => {
@@ -54,6 +65,27 @@ const CartPage = (() => {
 
   const submitOrder = async () => {
     if (Cart.isEmpty()) { showToast('⚠️ السلة فارغة'); return; }
+
+    // ── مطابقة أخيرة مع المخزون الحيّ قبل الإرسال مباشرة ──
+    // ده الحارس الحقيقي: لو صنفين طلبوا نفس آخر قطعة في نفس الوقت تقريبًا،
+    // الأول اللي يبعت طلبه يوخدها، والتاني هنا هيتوقف قبل الإرسال ويتعرض
+    // له بالظبط إيه اللي اتغيّر، بدل ما يبعت طلب لصنف خلص من غير ما يعرف.
+    const btnPre = document.getElementById('submit-order-btn');
+    if (btnPre) { btnPre.disabled = true; btnPre.textContent = 'بنتأكد من توفر الأصناف...'; }
+    try {
+      const fresh = await API.getProducts(true);
+      const { changed, messages } = Cart.validateStock(fresh);
+      if (changed) {
+        alert('⚠️ في تغيير حصل في المخزون وإحنا بنجهّز طلبك:\n\n' + messages.join('\n') + '\n\nراجع سلتك وابعت تاني.');
+        return;
+      }
+    } catch {
+      // فشل التحقق (مشكلة شبكة) — نكمل عادي بدل ما نمنع الإرسال بالكامل،
+      // نفس فلسفة withCache: نسخة قديمة أحسن من فشل تام
+    } finally {
+      if (btnPre) { btnPre.disabled = false; btnPre.textContent = 'إرسال الطلب 📲'; }
+    }
+    if (Cart.isEmpty()) { showToast('⚠️ السلة فارغة بعد التحديث'); return; }
 
     // ── الحد الأدنى للطلب ──
     // Fix #3: يدعم المفتاحَين min_order_amount و minimum_order
