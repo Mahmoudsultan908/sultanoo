@@ -9,6 +9,7 @@
   "theme_color": "#1a4731",
   "lang": "ar",
   "dir": "rtl",
+  "gcm_sender_id": "103953800507",
   "icons": [
     { "src": "assets/icons/icon-72.png",   "sizes": "72x72",     "type": "image/png" },
     { "src": "assets/icons/icon-96.png",   "sizes": "96x96",     "type": "image/png" },
