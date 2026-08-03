@@ -10,6 +10,7 @@ const HomePage = (() => {
       bindSearch();
       initialized = true;
     }
+    Push.renderHomeBanner();
     await loadSections();
   };
 

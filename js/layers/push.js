@@ -68,7 +68,64 @@ const Push = (() => {
     }
   };
 
-  return { isSupported, getStatus, subscribe, unsubscribe };
+  // ── طلب تفعيل ودّي بعد التسجيل مباشرة (بوتوم شيت مخصّص، مش نداء متصفح
+  //    مفاجئ) — لازم يتحط جوه ضغطة مستخدم (زرار "تفعيل") عشان requestPermission
+  //    يشتغل صح على كل المتصفحات ────────────────────────────────────
+  const showPrompt = () => {
+    if (!isSupported() || document.getElementById('push-prompt-overlay')) return;
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay active';
+    overlay.id = 'push-prompt-overlay';
+    overlay.innerHTML = `
+      <div class="modal-sheet" style="text-align:center">
+        <div style="font-size:2.5rem;margin-bottom:.5rem">🔔</div>
+        <h3 style="margin-bottom:.5rem">فعّل الإشعارات؟</h3>
+        <p style="color:var(--gray-500);font-size:.9rem;margin-bottom:1.25rem">عشان توصلك عروضنا وتحديثات طلباتك أول بأول</p>
+        <button class="btn btn-primary btn-full" id="push-prompt-yes" style="margin-bottom:.5rem">🔔 تفعيل الإشعارات</button>
+        <button class="btn btn-ghost btn-full" id="push-prompt-later">لاحقاً</button>
+      </div>`;
+    document.body.appendChild(overlay);
+    document.getElementById('push-prompt-yes').onclick = async () => {
+      overlay.remove();
+      try { await subscribe(); showToast('✅ تم تفعيل الإشعارات'); }
+      catch (e) { showToast('⚠️ ' + e.message); }
+    };
+    document.getElementById('push-prompt-later').onclick = () => overlay.remove();
+  };
+
+  // ── بانر تفعيل خفيف في الصفحة الرئيسية لأي عميل لسه ما فعّلش —
+  //    قابل للإغلاق، وبيرجع يظهر تاني بعد 3 أيام لو لسه مش مفعّل
+  //    (مش كل زيارة عشان ميبقاش مزعج) ─────────────────────────────
+  const HOME_BANNER_DISMISS_KEY = 'sultan_push_banner_dismissed_at';
+  const HOME_BANNER_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000;
+
+  const renderHomeBanner = async () => {
+    const el = document.getElementById('home-notify-banner');
+    if (!el) return;
+    const status = await getStatus();
+    if (status !== 'not-subscribed') { el.innerHTML = ''; return; }
+    const dismissedAt = Storage.get(HOME_BANNER_DISMISS_KEY);
+    if (dismissedAt && (Date.now() - dismissedAt) < HOME_BANNER_COOLDOWN_MS) { el.innerHTML = ''; return; }
+
+    el.innerHTML = `
+      <div style="margin:0 1rem 1rem;padding:.75rem 1rem;border-radius:12px;background:var(--green-light,#eafbf3);
+                  display:flex;align-items:center;gap:.6rem" id="push-home-banner-inner">
+        <span style="font-size:1.4rem">🔔</span>
+        <span style="flex:1;font-size:.82rem;color:var(--gray-700,#374151)">فعّل الإشعارات عشان توصلك عروضنا</span>
+        <button class="btn btn-primary btn-sm" id="push-home-banner-yes">تفعيل</button>
+        <button id="push-home-banner-close" style="background:none;border:none;font-size:1.1rem;color:var(--gray-400);cursor:pointer;padding:0 .25rem">✕</button>
+      </div>`;
+    document.getElementById('push-home-banner-yes').onclick = async () => {
+      try { await subscribe(); showToast('✅ تم تفعيل الإشعارات'); el.innerHTML = ''; }
+      catch (e) { showToast('⚠️ ' + e.message); }
+    };
+    document.getElementById('push-home-banner-close').onclick = () => {
+      Storage.set(HOME_BANNER_DISMISS_KEY, Date.now());
+      el.innerHTML = '';
+    };
+  };
+
+  return { isSupported, getStatus, subscribe, unsubscribe, showPrompt, renderHomeBanner };
 })();
 
 window.Push = Push;

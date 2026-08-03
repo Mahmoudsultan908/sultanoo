@@ -97,6 +97,7 @@ const RegisterPage = (() => {
         showToast(`🎉 أهلاً بعودتك ${existing.name}!`);
         btn.disabled    = false;
         btn.textContent = 'ابدأ التسوق →';
+        setTimeout(() => Push.showPrompt(), 1500);
         return;
       }
     } catch { /* فشل الاتصال — كمّل التسجيل الجديد */ }
@@ -113,6 +114,7 @@ const RegisterPage = (() => {
     showToast(`🎉 أهلاً ${name}! يمكنك التسوق الآن`);
     btn.disabled    = false;
     btn.textContent = 'ابدأ التسوق →';
+    setTimeout(() => Push.showPrompt(), 1500);
   };
 
   const flash = (id, msg) => {
