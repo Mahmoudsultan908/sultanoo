@@ -172,6 +172,19 @@ const ERPProvider = (() => {
 
     async updateCustomerFavorites() { /* مفيش تخزين مفضّلة في سلطان ERP حالياً */ },
 
+    async savePushSubscription(sub) {
+      const { error } = await sb.rpc('fn_sultano_save_push_subscription', {
+        p_customer_id: sub.customer_id, p_endpoint: sub.endpoint,
+        p_p256dh: sub.p256dh, p_auth: sub.auth, p_user_agent: sub.user_agent || null,
+      });
+      if (error) throw error;
+    },
+
+    async removePushSubscription(endpoint) {
+      const { error } = await sb.rpc('fn_sultano_remove_push_subscription', { p_endpoint: endpoint });
+      if (error) throw error;
+    },
+
     async getBanners() {
       const { data, error } = await sb.rpc('fn_sultano_get_banners');
       if (error) throw error;

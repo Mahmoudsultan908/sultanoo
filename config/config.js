@@ -37,6 +37,13 @@ const CONFIG = {
     get URL() { return `https://wa.me/${this.NUMBER}`; },
   },
 
+  PUSH: {
+    // مفتاح VAPID العام — آمن يتحط هنا في كود العميل (مقابله المفتاح
+    // الخاص محفوظ سرّي كـ secret في Edge Function send-push-notification
+    // على Supabase، مش هنا)
+    VAPID_PUBLIC_KEY: 'BKC7z9w6EBPKJP6Ks0UkyWu-ttozmEo76fM0377tPj9c3iFBIRsBbKd3w_nRQq_1oI4sZmZjB8TLsb6pEymj-sk',
+  },
+
   CACHE: {
     TTL_PRODUCTS:   5  * 60 * 1000,
     TTL_CATEGORIES: 5  * 60 * 1000,

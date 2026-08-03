@@ -229,6 +229,9 @@ const API = (() => {
     return updated;
   };
 
+  const savePushSubscription = (sub) => getProvider().savePushSubscription(sub);
+  const removePushSubscription = (endpoint) => getProvider().removePushSubscription(endpoint);
+
   const updateCustomerFavorites = async (customerId, phone, favString) => {
     try {
       await getProvider().updateCustomerFavorites(customerId, phone, favString);
@@ -342,6 +345,7 @@ const API = (() => {
     submitOrder, getOrdersHistory, getLastOrder, getOrders, getCustomerAccount,
     registerCustomer, getCustomer, isRegistered, updateCustomer,
     getCustomerByPhone, updateCustomerFavorites,
+    savePushSubscription, removePushSubscription,
     sendWhatsApp,
     initSettings, getSettings, clearDataCache,
     generateId,

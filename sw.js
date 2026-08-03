@@ -5,9 +5,9 @@
  * Network-first للبيانات
  */
 
-const CACHE_NAME    = 'sultan-v3.1.6';
-const STATIC_CACHE  = 'sultan-static-v3.1.6';
-const DATA_CACHE    = 'sultan-data-v3.1.6';
+const CACHE_NAME    = 'sultan-v3.2.0';
+const STATIC_CACHE  = 'sultan-static-v3.2.0';
+const DATA_CACHE    = 'sultan-data-v3.2.0';
 
 // الملفات التي تُحفظ دائماً offline
 const STATIC_ASSETS = [
@@ -26,6 +26,7 @@ const STATIC_ASSETS = [
   './js/layers/storage.js',
   './js/layers/cart.js',
   './js/layers/favorites.js',
+  './js/layers/push.js',
   './js/api/providers/sheets.js',
   './js/api/providers/supabase-client.js',
   './js/api/providers/erp.js',
@@ -151,6 +152,7 @@ self.addEventListener('push', (event) => {
       body:  data.body  || '',
       icon:  data.icon  || './assets/icons/icon-192.png',
       badge: data.badge || './assets/icons/icon-72.png',
+      image: data.image || undefined,
       dir:   'rtl',
       lang:  'ar',
       data:  data.url   || './',

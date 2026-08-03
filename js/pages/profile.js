@@ -67,7 +67,54 @@ const ProfilePage = (() => {
           </div>
         </div>`;
     }
+    renderNotifications();
     renderSettings();
+  };
+
+  // إشعارات Push حقيقية (زي إشعارات فيسبوك) — مش واتساب، إشعار من
+  // المتصفح نفسه حتى لو التطبيق مقفول. الحالة بتتقرأ من المتصفح نفسه
+  // (Notification.permission + وجود اشتراك فعلي) مش من تخزين محلي،
+  // عشان لو المستخدم غيّر الإذن من إعدادات المتصفح الحالة تفضل صحيحة.
+  const renderNotifications = async () => {
+    const el = document.getElementById('profile-notifications');
+    if (!el) return;
+    const status = await Push.getStatus();
+    if (status === 'unsupported') { el.innerHTML = ''; return; }
+
+    const statusInfo = {
+      subscribed:     { label: '✅ الإشعارات مفعّلة',        btnLabel: '🔕 إيقاف الإشعارات', color: 'var(--green-main)' },
+      'not-subscribed': { label: '🔔 فعّل الإشعارات',         btnLabel: '🔔 تفعيل',           color: 'var(--gray-500)' },
+      denied:         { label: '🚫 الإشعارات ممنوعة من المتصفح', btnLabel: null,                 color: 'var(--danger)' },
+    }[status];
+
+    el.innerHTML = `
+      <div class="profile-card">
+        <div class="profile-card-header" style="display:flex;align-items:center;justify-content:space-between">
+          <span style="color:${statusInfo.color}">${statusInfo.label}</span>
+          ${statusInfo.btnLabel ? `<button class="btn btn-ghost btn-sm" id="push-toggle-btn" onclick="ProfilePage.toggleNotifications()">${statusInfo.btnLabel}</button>` : ''}
+        </div>
+        ${status === 'denied' ? `<p style="font-size:.75rem;color:var(--gray-400);padding:0 1rem 1rem">لازم تسمح بالإشعارات من إعدادات المتصفح للموقع ده عشان تقدر تفعّلها.</p>` : ''}
+        ${status === 'not-subscribed' ? `<p style="font-size:.75rem;color:var(--gray-400);padding:0 1rem 1rem">فعّلها عشان توصلك إشعارات عروض وتحديثات طلباتك أول بأول.</p>` : ''}
+      </div>`;
+  };
+
+  const toggleNotifications = async () => {
+    const btn = document.getElementById('push-toggle-btn');
+    if (btn) { btn.disabled = true; }
+    try {
+      const status = await Push.getStatus();
+      if (status === 'subscribed') {
+        await Push.unsubscribe();
+        showToast('🔕 تم إيقاف الإشعارات');
+      } else {
+        await Push.subscribe();
+        showToast('✅ تم تفعيل الإشعارات');
+      }
+    } catch (e) {
+      showToast('⚠️ ' + e.message);
+    } finally {
+      renderNotifications();
+    }
   };
 
   const openEdit = async () => {
@@ -171,5 +218,5 @@ const ProfilePage = (() => {
     location.reload();
   };
 
-  return { render, openEdit, closeEdit, saveEdit, refreshSettings, resetRegistration, refreshData };
+  return { render, openEdit, closeEdit, saveEdit, refreshSettings, resetRegistration, refreshData, toggleNotifications };
 })();
