@@ -11,6 +11,11 @@ const CartPage = (() => {
     // مطابقة هادئة مع المخزون الحيّ لحظة فتح السلة — لو صنف خلص وهو قاعد
     // في سلة عميل من زمان، يبان له على طول بدل ما يتفاجئ وقت الإرسال
     if (!Cart.isEmpty()) checkStockSilently();
+    // لو قافل التطبيق تماماً وقت ما فشل الإرسال وفتحه تاني بعد ما النت
+    // رجع، حدث 'online' مبيتسجّلش أصلاً (الصفحة اتقفلت) — فبنتأكد هنا كمان
+    if (navigator.onLine && !Cart.isEmpty() && API.hasPendingOrderDraft(Cart.getItems())) {
+      retryPendingOrder(API.getPendingOrderDraftNotes());
+    }
   };
 
   const checkStockSilently = async () => {
@@ -131,11 +136,49 @@ const CartPage = (() => {
       showOrderSuccess(result.orderId, result.total);
     } catch (e) {
       console.error('[Cart] submit error:', e);
-      showToast('❌ فشل الإرسال، حاول مرة أخرى');
+      // ★ مهم: منمسحش السلة هنا — لو مسحناها والطلب فعلاً اتسجل في سلطان
+      //   (بس الرد ضاع بسبب مشكلة نت)، العميل هيفتكر إنه اتبعت ومش هيبعت
+      //   تاني، بينما احنا مش متأكدين. السلة بتفضل زي ما هي، وsubmitOrder
+      //   بتستخدم نفس رقم الطلب في أي محاولة تانية (يدوية أو تلقائية)
+      //   طول ما محتوى السلة نفسه، فمفيش خطر تكرار.
+      showToast('📴 فشل الإرسال — هنحاول تلقائي أول ما النت يرجع، أو دوس "إرسال" تاني');
+      armAutoRetry(notes);
     } finally {
       btn.disabled = false;
       btn.textContent = 'إرسال الطلب 📲';
     }
+  };
+
+  // محاولة فعلية لإعادة إرسال طلب فشل قبل كده — بتتنادى إما فورًا (لو
+  // فتح صفحة السلة والنت موصول أصلاً) أو من armAutoRetry (لما حدث
+  // 'online' يحصل بعدين وهو لسه في نفس الجلسة)
+  const retryPendingOrder = async (notes) => {
+    if (Cart.isEmpty() || !API.hasPendingOrderDraft(Cart.getItems())) return; // اتبعتت يدوي أو اتغيّرت السلة
+    try {
+      const result = await API.submitOrder(Cart.getItems(), notes);
+      API.sendWhatsApp(result.orderData, result.itemsData);
+      Cart.clear();
+      showToast('✅ اتبعت طلبك اللي فشل قبل كده — رقم الطلب ' + result.orderId, 5000);
+      // ★ العميل ممكن يكون مسّح صفحة السلة وقت ما النت رجع — منلمسش عناصرها
+      //   إلا لو هي فعلاً الصفحة الظاهرة دلوقتي
+      if (Router.getCurrentPage() === 'cart') showOrderSuccess(result.orderId, result.total);
+    } catch (e) {
+      console.error('[Cart] auto-retry failed:', e);
+      armAutoRetry(notes); // لسه فيه مشكلة (مش بس النت) — استنى رجوع الاتصال تاني
+    }
+  };
+
+  // محاولة تلقائية صامتة أول ما الاتصال يرجع — مرة واحدة لكل فشل، وبترجع
+  // تسجّل نفسها تاني لو فشلت هي كمان (تغطية لتقطيع نت متكرر)
+  let _autoRetryArmed = false;
+  const armAutoRetry = (notes) => {
+    if (_autoRetryArmed) return;
+    _autoRetryArmed = true;
+    window.addEventListener('online', function onOnline(){
+      window.removeEventListener('online', onOnline);
+      _autoRetryArmed = false;
+      retryPendingOrder(notes);
+    }, { once: true });
   };
 
   const showOrderSuccess = (orderId, total) => {

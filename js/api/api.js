@@ -128,12 +128,23 @@ const API = (() => {
   };
 
   // ─── Orders ────────────────────────────────────────────────────
+  const PENDING_ORDER_KEY = 'sultan_pending_order_draft';
+
+  // ★ لو المستخدم دوس "أعد المحاولة" بعد فشل، submitOrder كانت بتولّد
+  //   orderId جديد كل مرة — يعني لو المحاولة الأولى نجحت فعلاً في سلطان
+  //   بس الرد ضاع (مشكلة نت شائعة)، كل محاولة تانية كانت بتبعت طلب
+  //   مكرر منفصل. دلوقتي بنحتفظ بنفس الـ id طول ما محتوى السلة نفسه لم
+  //   يتغيّر، فأي محاولة تانية بترجع لنفس الطلب بدل ما تعمل واحد جديد.
   const submitOrder = async (cartItems, notes = '') => {
     const customer = Storage.get(Storage.KEYS.CUSTOMER);
     if (!customer) throw new Error('لم يتم تسجيل العميل');
     if (!cartItems.length) throw new Error('السلة فارغة');
 
-    const orderId = generateId('ORD');
+    const cartSignature = JSON.stringify(cartItems.map(i => [i.id, i.quantity]).sort());
+    const draft = Storage.get(PENDING_ORDER_KEY);
+    const orderId = (draft && draft.signature === cartSignature) ? draft.id : generateId('ORD');
+    Storage.set(PENDING_ORDER_KEY, { id: orderId, signature: cartSignature, notes, ts: Date.now() });
+
     const now = new Date().toISOString();
     const total = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
 
@@ -161,6 +172,7 @@ const API = (() => {
     }));
 
     await getProvider().submitOrder(orderData, itemsData);
+    Storage.remove(PENDING_ORDER_KEY); // نجحت فعلاً — امسح المسودة عشان الطلب الجاي ياخد id جديد
 
     // حفظ الطلب محلياً
     const history = Storage.get(Storage.KEYS.ORDERS_HISTORY) || [];
@@ -170,6 +182,18 @@ const API = (() => {
 
     return { orderId, total, orderData, itemsData };
   };
+
+  // هل فيه مسودة طلب فشلت وسلة العميل لسه مطابقة لمحتواها؟ — تُستخدم
+  // للمحاولة التلقائية عند رجوع النت من غير ما العميل يضغط زرار
+  const hasPendingOrderDraft = (cartItems) => {
+    const draft = Storage.get(PENDING_ORDER_KEY);
+    if (!draft || !cartItems?.length) return false;
+    return draft.signature === JSON.stringify(cartItems.map(i => [i.id, i.quantity]).sort());
+  };
+
+  // ملاحظات آخر محاولة فاشلة (لو موجودة) — عشان المحاولة التلقائية تبعتها
+  // بنفس النص حتى لو التطبيق اتقفل وفتح تاني (خانة الملاحظات بترجع فاضية)
+  const getPendingOrderDraftNotes = () => Storage.get(PENDING_ORDER_KEY)?.notes || '';
 
   const getOrdersHistory = () => {
     return Storage.get(Storage.KEYS.ORDERS_HISTORY) || [];
@@ -342,7 +366,7 @@ const API = (() => {
     searchProducts, getProductById,
     getCategories, getMainCategories, getSubcategories,
     getAreas, getBanners,
-    submitOrder, getOrdersHistory, getLastOrder, getOrders, getCustomerAccount,
+    submitOrder, hasPendingOrderDraft, getPendingOrderDraftNotes, getOrdersHistory, getLastOrder, getOrders, getCustomerAccount,
     registerCustomer, getCustomer, isRegistered, updateCustomer,
     getCustomerByPhone, updateCustomerFavorites,
     savePushSubscription, removePushSubscription,
