@@ -12,6 +12,24 @@ const Cart = (() => {
     Storage.set(Storage.KEYS.CART, items);
     listeners.forEach(fn => fn(items));
     updateCartBadge();
+    syncCartToServer();
+  };
+
+  // ★ نسخة من السلة في سلطان ERP (customer_carts) — عشان لو حصل مشكلة
+  //   وقت الإرسال، الأدمن يشوف بالظبط اللي العميل حاطّه ويكمّل الطلبية
+  //   من عنده. Debounced عشان مانبعتش على كل ضغطة +/- منفصلة، وبيتبلع
+  //   بهدوء لو فشل (النت أصلاً غير مضمون هنا، مش لازم يوقف تجربة العميل)
+  let _cartSyncTimer = null;
+  const syncCartToServer = () => {
+    clearTimeout(_cartSyncTimer);
+    _cartSyncTimer = setTimeout(() => {
+      const customer = typeof API !== 'undefined' ? API.getCustomer() : null;
+      if (!customer?.id) return;
+      const p = items.length
+        ? API.syncCart(customer.id, items)
+        : API.clearCart(customer.id);
+      p.catch(() => {});
+    }, 1500);
   };
 
   const updateCartBadge = () => {

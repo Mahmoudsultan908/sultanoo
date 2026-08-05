@@ -119,6 +119,21 @@ const ERPProvider = (() => {
       if (error) throw error;
     },
 
+    // نسخة حيّة من سلة العميل في سلطان ERP — عشان لو العميل اتعطّل معاه
+    // الإرسال، الأدمن يشوف بالظبط اللي في سلته ويكمّل الطلبية من عنده.
+    // فشل الاتصال هنا مش لازم يبوّظ تجربة العميل، فبيتبلع بهدوء من اللي بينادي
+    async syncCart(customerId, items) {
+      const { error } = await sb.rpc('fn_sultano_sync_cart', {
+        p_customer_id: customerId,
+        p_items: (items || []).map(it => ({ product_id: it.id, name: it.name_ar, unit: it.unit, price: it.price, qty: it.quantity })),
+      });
+      if (error) throw error;
+    },
+    async clearCart(customerId) {
+      const { error } = await sb.rpc('fn_sultano_clear_cart', { p_customer_id: customerId });
+      if (error) throw error;
+    },
+
     async registerCustomer(data) {
       const { data: newId, error } = await sb.rpc('fn_sultano_register_customer', {
         p_name: data.name, p_shop_name: data.shop_name, p_phone: data.phone,

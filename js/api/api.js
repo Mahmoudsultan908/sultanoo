@@ -255,6 +255,8 @@ const API = (() => {
 
   const savePushSubscription = (sub) => getProvider().savePushSubscription(sub);
   const removePushSubscription = (endpoint) => getProvider().removePushSubscription(endpoint);
+  const syncCart = (customerId, items) => getProvider().syncCart(customerId, items);
+  const clearCart = (customerId) => getProvider().clearCart(customerId);
 
   const updateCustomerFavorites = async (customerId, phone, favString) => {
     try {
@@ -370,6 +372,7 @@ const API = (() => {
     registerCustomer, getCustomer, isRegistered, updateCustomer,
     getCustomerByPhone, updateCustomerFavorites,
     savePushSubscription, removePushSubscription,
+    syncCart, clearCart,
     sendWhatsApp,
     initSettings, getSettings, clearDataCache,
     generateId,

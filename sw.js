@@ -5,7 +5,7 @@
  * Network-first للبيانات
  */
 
-const CACHE_NAME    = 'sultan-v3.3.0';
+const CACHE_NAME    = 'sultan-v3.3.1';
 const STATIC_CACHE  = 'sultan-static-v3.3.0';
 const DATA_CACHE    = 'sultan-data-v3.3.0';
 
