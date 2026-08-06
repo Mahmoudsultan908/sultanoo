@@ -119,6 +119,17 @@ const ERPProvider = (() => {
       if (error) throw error;
     },
 
+    // هل موظف كمّل الطلب ده من عنده في سلطان ERP من وقت آخر محاولة إرسال
+    // فشلت؟ — بيمنع إعادة إرسال (يدوي أو أوتوماتيك) لطلب اتنفّذ بالفعل
+    async checkCartFulfilled(customerId, sinceIso) {
+      const { data, error } = await sb.rpc('fn_sultano_check_cart_fulfilled', {
+        p_customer_id: customerId,
+        p_since: sinceIso,
+      });
+      if (error) throw error;
+      return !!data;
+    },
+
     // نسخة حيّة من سلة العميل في سلطان ERP — عشان لو العميل اتعطّل معاه
     // الإرسال، الأدمن يشوف بالظبط اللي في سلته ويكمّل الطلبية من عنده.
     // فشل الاتصال هنا مش لازم يبوّظ تجربة العميل، فبيتبلع بهدوء من اللي بينادي

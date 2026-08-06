@@ -142,7 +142,27 @@ const API = (() => {
 
     const cartSignature = JSON.stringify(cartItems.map(i => [i.id, i.quantity]).sort());
     const draft = Storage.get(PENDING_ORDER_KEY);
-    const orderId = (draft && draft.signature === cartSignature) ? draft.id : generateId('ORD');
+    const isRetryOfSameCart = !!(draft && draft.signature === cartSignature);
+
+    // ★ لو ده إعادة محاولة لطلب فشل قبل كده، اتأكد الأول إن موظف مكملهوش
+    //   من عنده في سلطان ERP في الوقت اللي فات (شاشة "سلال حالية") — لو
+    //   أيوه، منبعتوش تاني (كان هيبقى تكرار حقيقي) وامسح المسودة القديمة.
+    if (isRetryOfSameCart) {
+      let fulfilled = false;
+      try {
+        fulfilled = await getProvider().checkCartFulfilled(customer.id, new Date(draft.ts).toISOString());
+      } catch {
+        // فشل التحقق نفسه (مشكلة نت) — اعتبره لأ وكمل عادي، أفضل من منع الإرسال بالكامل
+      }
+      if (fulfilled) {
+        Storage.remove(PENDING_ORDER_KEY);
+        const err = new Error('الطلب ده اتنفّذ بالفعل من عندنا');
+        err.alreadyFulfilled = true;
+        throw err;
+      }
+    }
+
+    const orderId = isRetryOfSameCart ? draft.id : generateId('ORD');
     Storage.set(PENDING_ORDER_KEY, { id: orderId, signature: cartSignature, notes, ts: Date.now() });
 
     const now = new Date().toISOString();
@@ -194,6 +214,11 @@ const API = (() => {
   // ملاحظات آخر محاولة فاشلة (لو موجودة) — عشان المحاولة التلقائية تبعتها
   // بنفس النص حتى لو التطبيق اتقفل وفتح تاني (خانة الملاحظات بترجع فاضية)
   const getPendingOrderDraftNotes = () => Storage.get(PENDING_ORDER_KEY)?.notes || '';
+
+  // لو مطابقة المخزون شالت كل أصناف المسودة الفاشلة (كلها خلصت)، مفيش
+  // حاجة نبعتها تاني — نمسح المسودة عشان hasPendingOrderDraft ميفضلش
+  // شايفها معلّقة على سلة فاضية للأبد
+  const clearPendingOrderDraft = () => Storage.remove(PENDING_ORDER_KEY);
 
   const getOrdersHistory = () => {
     return Storage.get(Storage.KEYS.ORDERS_HISTORY) || [];
@@ -368,7 +393,7 @@ const API = (() => {
     searchProducts, getProductById,
     getCategories, getMainCategories, getSubcategories,
     getAreas, getBanners,
-    submitOrder, hasPendingOrderDraft, getPendingOrderDraftNotes, getOrdersHistory, getLastOrder, getOrders, getCustomerAccount,
+    submitOrder, hasPendingOrderDraft, getPendingOrderDraftNotes, clearPendingOrderDraft, getOrdersHistory, getLastOrder, getOrders, getCustomerAccount,
     registerCustomer, getCustomer, isRegistered, updateCustomer,
     getCustomerByPhone, updateCustomerFavorites,
     savePushSubscription, removePushSubscription,

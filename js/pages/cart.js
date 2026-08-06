@@ -136,6 +136,13 @@ const CartPage = (() => {
       showOrderSuccess(result.orderId, result.total);
     } catch (e) {
       console.error('[Cart] submit error:', e);
+      // ★ لو حد من عندنا كمّل الطلب ده بالفعل (شاشة "سلال حالية" في الـERP)
+      //   من وقت آخر محاولة فشلت — منبعتوش تاني، عشان منعملش طلب مكرر
+      if (e.alreadyFulfilled) {
+        Cart.clear();
+        showToast('✅ طلبك ده اتنفّذ بالفعل من فريقنا', 5000);
+        return;
+      }
       // ★ مهم: منمسحش السلة هنا — لو مسحناها والطلب فعلاً اتسجل في سلطان
       //   (بس الرد ضاع بسبب مشكلة نت)، العميل هيفتكر إنه اتبعت ومش هيبعت
       //   تاني، بينما احنا مش متأكدين. السلة بتفضل زي ما هي، وsubmitOrder
@@ -155,6 +162,22 @@ const CartPage = (() => {
   const retryPendingOrder = async (notes) => {
     if (Cart.isEmpty() || !API.hasPendingOrderDraft(Cart.getItems())) return; // اتبعتت يدوي أو اتغيّرت السلة
     try {
+      // ★ نفس مطابقة المخزون الحي اللي بتحصل في الإرسال اليدوي (submitOrder) —
+      //   من غيرها كنا بنعيد إرسال نفس محتوى السلة القديم زي ما هو، حتى لو
+      //   المخزون خلص من وقت المحاولة الأولى الفاشلة. المطابقة بتعدّل/تشيل
+      //   من السلة لو لزم، ولو غيّرت حاجة cartSignature هيتغيّر فيبقى
+      //   submitOrder هيولّد orderId جديد بدل ما يعتبرها نفس المحاولة القديمة
+      //   (صح، لأن المحتوى فعلاً اتغيّر).
+      try {
+        const fresh = await API.getProducts(true);
+        const { changed, messages } = Cart.validateStock(fresh);
+        if (changed) {
+          if (Router.getCurrentPage() === 'cart') showToast(messages.join(' • '), 6000);
+          if (Cart.isEmpty()) { API.clearPendingOrderDraft(); return; } // كل الأصناف خلصت — مفيش حاجة نبعتها
+        }
+      } catch {
+        // فشل التحقق (مشكلة شبكة) — نفس فلسفة submitOrder اليدوي: نكمل زي ما هي بدل ما نمنع المحاولة بالكامل
+      }
       const result = await API.submitOrder(Cart.getItems(), notes);
       API.sendWhatsApp(result.orderData, result.itemsData);
       Cart.clear();
@@ -164,6 +187,11 @@ const CartPage = (() => {
       if (Router.getCurrentPage() === 'cart') showOrderSuccess(result.orderId, result.total);
     } catch (e) {
       console.error('[Cart] auto-retry failed:', e);
+      if (e.alreadyFulfilled) {
+        Cart.clear();
+        if (Router.getCurrentPage() === 'cart') showToast('✅ طلبك ده اتنفّذ بالفعل من فريقنا', 5000);
+        return; // مش بنعيد تسليح المحاولة — مفيش حاجة تانية تتبعت
+      }
       armAutoRetry(notes); // لسه فيه مشكلة (مش بس النت) — استنى رجوع الاتصال تاني
     }
   };
