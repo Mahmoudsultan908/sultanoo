@@ -1,0 +1,273 @@
+/**
+ * Sultan Foods — Home Page
+ */
+
+const HomePage = (() => {
+  let initialized = false;
+
+  const render = async () => {
+    if (!initialized) {
+      bindSearch();
+      initialized = true;
+    }
+    Push.renderHomeBanner();
+    renderGreeting();
+    renderReorderCTA();
+    await loadSections();
+    renderBuyAgain();
+  };
+
+  // إعادة طلب آخر طلبية بضغطة واحدة — من نفس بيانات API.getLastOrder()
+  // اللي شاشة السلة بتستخدمها في مشاركة الفاتورة
+  const renderReorderCTA = () => {
+    const box = document.getElementById('home-reorder-cta');
+    const subEl = document.getElementById('reorder-cta-sub');
+    if (!box) return;
+    const order = API.getLastOrder();
+    if (!order || !order.items?.length) { box.classList.add('hidden'); return; }
+    const date = order.created_at
+      ? new Date(order.created_at).toLocaleDateString('ar-EG', { month: 'short', day: 'numeric' })
+      : '';
+    if (subEl) subEl.textContent = `${order.items.length} صنف${date ? ' — ' + date : ''}`;
+    box.classList.remove('hidden');
+  };
+
+  // نفس المنطق الآمن المستخدم في OrdersPage.reorder بالظبط — نفس شكل
+  // الصنف اللي Cart.add() متوقعه
+  const reorderLast = () => {
+    const order = API.getLastOrder();
+    if (!order || !order.items?.length) { showToast('⚠️ مفيش طلب سابق نكرره'); return; }
+    order.items.forEach(item => {
+      Cart.add({
+        id: item.product_id,
+        name_ar: item.product_name,
+        unit: item.unit,
+        price: item.price,
+        image_url: '',
+      }, item.quantity);
+    });
+    navigateTo('cart');
+    showToast(`✅ تم إضافة ${order.items.length} صنف للسلة`);
+  };
+
+  const renderGreeting = () => {
+    const el = document.getElementById('home-greet');
+    if (!el) return;
+    const customer = API.getCustomer();
+    const hour = new Date().getHours();
+    const timeGreeting = hour < 12 ? 'صباح الخير' : 'مساء الخير';
+    el.innerHTML = customer?.name
+      ? `${timeGreeting} يا ${customer.name.split(' ')[0]}`
+      : timeGreeting;
+  };
+
+  // صف "بترجع تطلبه" — من سجل طلباتك الفعلي على الجهاز ده، مش تخمين
+  const renderBuyAgain = async () => {
+    const wrap = document.getElementById('home-buyagain-wrap');
+    const el = document.getElementById('home-buyagain');
+    if (!wrap || !el) return;
+    try {
+      const products = await getBuyAgainProducts(10);
+      if (!products.length) { wrap.classList.add('hidden'); return; }
+
+      el.innerHTML = products.map(p => renderProductCard(p)).join('');
+      // 144px مش 80px — عشان زر +/- عدّاد الكمية يبان كامل جنب السعر، مش يتقطع
+      el.querySelectorAll('.product-card').forEach(c => { c.style.width = '144px'; c.style.flexShrink = '0'; });
+      wrap.classList.remove('hidden');
+    } catch (e) {
+      console.error('[Home] buy-again load error:', e);
+      wrap.classList.add('hidden');
+    }
+  };
+
+  const loadSections = async () => {
+    renderSkeletons();
+    try {
+      const [featuredR, bestsellersR, categoriesR, bannersR] = await Promise.allSettled([
+        API.getFeatured(),
+        API.getBestsellers(),
+        API.getHomeCategories(),
+        API.getBanners(),
+      ]);
+      const featured    = featuredR.status    === 'fulfilled' ? featuredR.value    : [];
+      const bestsellers = bestsellersR.status === 'fulfilled' ? bestsellersR.value : [];
+      const categories  = categoriesR.status  === 'fulfilled' ? categoriesR.value  : [];
+      const banners     = bannersR.status     === 'fulfilled' ? bannersR.value     : [];
+
+      renderBanners(banners);
+      renderFeatured(featured);
+      renderBestsellers(bestsellers);
+
+      // الأقسام هي الأهم — لو هي فشلت فعلاً (مفيش كاش قديم ولا جديد) وريها رسالة الخطأ
+      if (categoriesR.status === 'fulfilled') {
+        renderCategories(categories);
+      } else {
+        throw categoriesR.reason;
+      }
+    } catch (e) {
+      console.error('[Home] load error:', e);
+      const el = document.getElementById('home-categories');
+      if (el) el.innerHTML = `
+        <div style="text-align:center;padding:2rem;grid-column:1/-1">
+          <div style="font-size:2.5rem;margin-bottom:.5rem">⚠️</div>
+          <p style="color:var(--gray-500);margin:.25rem 0 1rem">تعذّر تحميل البيانات</p>
+          <button class="btn btn-primary" onclick="HomePage.retry()" style="padding:.5rem 1.5rem">🔄 إعادة المحاولة</button>
+        </div>`;
+      const featEl = document.getElementById('home-featured');
+      if (featEl) featEl.closest('.section-wrap')?.classList.add('hidden');
+    }
+  };
+
+  const renderBanners = (allBanners) => {
+    const el = document.getElementById('home-banners');
+    const banners = (allBanners || []).filter(b => b.display_type !== 'popup');
+    if (!el || !banners.length) { if (el) el.style.display = 'none'; return; }
+    el.style.display = 'block';
+    let current = 0;
+
+    el.innerHTML = `
+      <div style="position:relative;overflow:hidden;border-radius:14px;margin:0 1rem 1rem">
+        ${banners.map((b, i) => `
+          <div class="banner-slide" data-slide="${i}"
+            style="display:${i===0?'flex':'none'};position:relative;min-height:150px;
+                   background:${b.bg_color || '#1a4731'};
+                   border-radius:14px;${b.link_to ? 'cursor:pointer' : ''}"
+            ${b.link_to ? `onclick="navigateTo('category', {id:'${b.link_to}'})"` : ''}>
+            ${b.image_url
+              ? `<img src="${b.image_url}" alt="${b.title}"
+                   style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:14px"
+                   loading="lazy" onerror="this.style.display='none'">`
+              : ''}
+            <div style="position:absolute;top:0;right:0;left:0;padding:.7rem .9rem;
+                        background:linear-gradient(to bottom, rgba(0,0,0,.6), transparent);
+                        border-radius:14px 14px 0 0">
+              <div style="font-size:.85rem;font-weight:800;color:#fff;line-height:1.3;
+                          text-shadow:0 1px 3px rgba(0,0,0,.5)">${b.title}</div>
+              ${b.subtitle ? `<div style="font-size:.7rem;color:rgba(255,255,255,.9);margin-top:.2rem;text-shadow:0 1px 3px rgba(0,0,0,.5)">${b.subtitle}</div>` : ''}
+            </div>
+          </div>`).join('')}
+        ${banners.length > 1 ? `
+          <div style="position:absolute;bottom:7px;left:50%;transform:translateX(-50%);
+                      display:flex;gap:5px;pointer-events:none" id="banner-dots">
+            ${banners.map((_, i) => `
+              <div id="bdot-${i}" style="width:${i===0?'18':'6'}px;height:6px;border-radius:3px;
+                background:${i===0?'#fff':'rgba(255,255,255,.4)'};transition:all .3s"></div>`).join('')}
+          </div>` : ''}
+      </div>`;
+
+    if (banners.length > 1) {
+      setInterval(() => {
+        const slides = el.querySelectorAll('.banner-slide');
+        const prevDot = document.getElementById(`bdot-${current}`);
+        if (prevDot) { prevDot.style.width = '6px'; prevDot.style.background = 'rgba(255,255,255,.4)'; }
+        slides[current].style.display = 'none';
+        current = (current + 1) % banners.length;
+        slides[current].style.display = 'flex';
+        const nextDot = document.getElementById(`bdot-${current}`);
+        if (nextDot) { nextDot.style.width = '18px'; nextDot.style.background = '#fff'; }
+      }, 4000);
+    }
+  };
+
+  const retry = () => { initialized = false; loadSections(); };
+
+  const renderSkeletons = () => {
+    const featEl = document.getElementById('home-featured');
+    if (featEl) featEl.innerHTML = Array(4).fill(`<div class="skeleton" style="width:100px;height:90px;border-radius:var(--radius-lg);flex-shrink:0"></div>`).join('');
+  };
+
+  const renderFeatured = (products) => {
+    const el = document.getElementById('home-featured');
+    if (!el) return;
+    if (!products.length) { el.closest('.section-wrap')?.classList.add('hidden'); return; }
+    el.innerHTML = products.slice(0, 8).map(p => `
+      <div class="featured-card" onclick="navigateTo('product', {id:'${p.id}'})">
+        <span class="badge-deal">مميز</span>
+        <img src="${p.image_url || ''}" alt="${p.name_ar}" class="feat-img"
+          onerror="this.src=''; this.parentElement.querySelector('.img-ph').style.display='flex'"
+          loading="lazy">
+        <div class="img-ph" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;font-size:2rem;background:rgba(255,255,255,0.05)">🛒</div>
+        <div class="feat-info">
+          <div class="feat-name">${p.name_ar}</div>
+          <div class="feat-price">${p.price.toFixed(2)} <span style="font-size:.7rem">ج.م</span></div>
+        </div>
+        <button class="feat-add" onclick="event.stopPropagation(); Cart.add(${JSON.stringify(p).replace(/"/g, '&quot;')})">+</button>
+      </div>
+    `).join('');
+  };
+
+  const renderBestsellers = (products) => {
+    const el = document.getElementById('home-bestsellers');
+    if (!el) return;
+    if (!products.length) { el.closest('.section-wrap')?.classList.add('hidden'); return; }
+    el.innerHTML = products.slice(0, 10).map(p => renderProductCard(p)).join('');
+    el.className = 'scroll-row';
+    el.querySelectorAll('.product-card').forEach(c => {
+      c.style.width = '144px';
+      c.style.flexShrink = '0';
+    });
+  };
+
+  const renderCategories = (categories) => {
+    const el = document.getElementById('home-categories');
+    if (!el) return;
+    if (!categories.length) return;
+    const tones = ['tone-a', 'tone-b', 'tone-c'];
+    el.innerHTML = categories.map((c, i) => `
+      <div class="cat-card ${tones[i % 3]}" onclick="navigateTo('category', {id:'${c.id}', name:'${c.name_ar}'})">
+        <div class="cat-img-wrap">
+          ${c.image_url
+            ? `<img src="${c.image_url}" alt="${c.name_ar}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+            : ''}
+          <span class="cat-icon" style="${c.image_url ? 'display:none' : ''}">${c.icon}</span>
+        </div>
+        <span class="cat-name">${c.name_ar}</span>
+      </div>
+    `).join('');
+  };
+
+  const bindSearch = () => {
+    const input = document.getElementById('home-search-input');
+    if (!input) return;
+    let timer;
+    input.addEventListener('input', (e) => {
+      clearTimeout(timer);
+      const q = e.target.value.trim();
+      if (q.length >= 2) {
+        timer = setTimeout(() => {
+          State.set({ searchQuery: q });
+          navigateTo('search', { query: q });
+        }, CONFIG.UI.SEARCH_DEBOUNCE);
+      }
+    });
+
+    input.addEventListener('focus', () => navigateTo('search'));
+
+    bindMic();
+  };
+
+  // بحث بالصوت — نفس مسار البحث الكتابي بالظبط (navigateTo('search', {query}))
+  const bindMic = () => {
+    const micBtn = document.getElementById('home-mic-btn');
+    if (!micBtn || !VoiceSearch?.isSupported()) return;
+    micBtn.style.display = 'block';
+
+    micBtn.addEventListener('click', () => {
+      if (VoiceSearch.isListening()) return;
+      micBtn.classList.add('listening');
+      VoiceSearch.start(
+        (text) => {
+          State.set({ searchQuery: text });
+          navigateTo('search', { query: text });
+        },
+        (err) => {
+          micBtn.classList.remove('listening');
+          const msg = VoiceSearch.errorMessage(err);
+          if (msg) showToast(msg);
+        }
+      );
+    });
+  };
+
+  return { render, retry, reorderLast };
+})();

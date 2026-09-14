@@ -1,0 +1,456 @@
+/**
+ * Sultan Foods — Unified API Layer ⭐
+ * ======================================
+ * هذا الملف هو الواجهة الوحيدة للبيانات في كل التطبيق.
+ * لا يتغير هذا الملف أبداً — فقط الـ Provider يتغير.
+ *
+ * Usage:
+ *   const products = await API.getProducts();
+ *   await API.submitOrder(order, items);
+ */
+
+const API = (() => {
+  // اختيار الـ Provider تلقائياً بناءً على الإعداد
+  const getProvider = () => {
+    if (CONFIG.DATA_PROVIDER === 'erp') return ERPProvider;
+    return SheetsProvider;
+  };
+
+  // توحيد إملاء عربي — عشان البحث (خصوصًا الصوتي) يلاقي المنتج حتى لو
+  // اختلفت رسمة حرف زي "فيري" المكتوبة بـ"ي" مقابل "فيرى" اللي بيتعرف
+  // بيها Speech Recognition أحيانًا بـ"ى" من غير نقط، أو أ/إ/آ عن ا
+  const normalizeArabic = (s) => (s || '')
+    .toLowerCase()
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/[ً-ْٰـ]/g, '') // تشكيل + تطويل
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Cache helper داخلي
+  const _inFlight = {};
+  const withCache = async (cacheKey, ttl, fetchFn) => {
+    const cached = Storage.getWithTTL(cacheKey, ttl);
+    if (cached) return cached;
+    // لو فيه طلب شغال بالفعل لنفس المفتاح، استنى نتيجته بدل ما تبعت طلب مكرر
+    if (_inFlight[cacheKey]) return _inFlight[cacheKey];
+    const promise = (async () => {
+      try {
+        const data = await fetchFn();
+        Storage.set(cacheKey, data);
+        return data;
+      } catch (e) {
+        // فشل الجلب (تايم آوت/شبكة بطيئة) — استخدم آخر نسخة متخزنة حتى لو قديمة، أفضل من شاشة فاضية
+        const stale = Storage.get(cacheKey);
+        if (stale) return stale;
+        throw e;
+      } finally {
+        delete _inFlight[cacheKey];
+      }
+    })();
+    _inFlight[cacheKey] = promise;
+    return promise;
+  };
+
+  // ─── توليد ID فريد ─────────────────────────────────────────────
+  const generateId = (prefix = '') => {
+    const ts = Date.now().toString(36).toUpperCase();
+    const rnd = Math.random().toString(36).substring(2, 6).toUpperCase();
+    return prefix ? `${prefix}-${ts}-${rnd}` : `${ts}-${rnd}`;
+  };
+
+  // ─── Products ──────────────────────────────────────────────────
+  const getProducts = async (forceRefresh = false) => {
+    if (forceRefresh) Storage.remove(Storage.KEYS.CACHE_PRODUCTS);
+    const products = await withCache(
+      Storage.KEYS.CACHE_PRODUCTS,
+      CONFIG.CACHE.TTL_PRODUCTS,
+      () => getProvider().getProducts()
+    );
+    return applyCustomerPricing(products);
+  };
+
+  const getProductsByCategory = async (categoryId) => {
+    const all = await getProducts();
+    return all.filter(p =>
+      p.is_available &&
+      (p.category_id === categoryId || p.subcategory_id === categoryId)
+    ).sort((a, b) => a.sort_order - b.sort_order);
+  };
+
+  const getFeatured = async () => {
+    const all = await getProducts();
+    return all.filter(p => p.is_available && p.is_featured);
+  };
+
+  const getBestsellers = async () => {
+    const all = await getProducts();
+    return all.filter(p => p.is_available && p.is_bestseller);
+  };
+
+  const searchProducts = async (query) => {
+    if (!query || query.trim().length < 2) return [];
+    const all = await getProducts();
+    const qAr = normalizeArabic(query);
+    const qEn = query.trim().toLowerCase();
+    return all.filter(p =>
+      p.is_available &&
+      (normalizeArabic(p.name_ar).includes(qAr) || p.name_en.toLowerCase().includes(qEn))
+    );
+  };
+
+  const getProductById = async (id) => {
+    const all = await getProducts();
+    return all.find(p => p.id === id) || null;
+  };
+
+  // ─── Categories ────────────────────────────────────────────────
+  const getCategories = async () => {
+    return withCache(
+      Storage.KEYS.CACHE_CATS,
+      CONFIG.CACHE.TTL_CATEGORIES,
+      () => getProvider().getCategories()
+    );
+  };
+
+  const getMainCategories = async () => {
+    const all = await getCategories();
+    return all.filter(c => !c.parent_id && c.is_active !== false).sort((a, b) => a.sort_order - b.sort_order);
+  };
+
+  const getSubcategories = async (parentId) => {
+    // Provider بيدعم أقسام فرعية حقيقية (زي ERPProvider اللي بيرجّع الشركات
+    // المصنّعة كأقسام فرعية) — لو مش موجودة (SheetsProvider)، ارجع للسلوك
+    // القديم: فلترة من نفس قايمة الأقسام بالـ parent_id
+    try {
+      const sub = await getProvider().getSubcategories(parentId);
+      if (Array.isArray(sub)) return sub.sort((a, b) => a.sort_order - b.sort_order);
+    } catch {}
+    const all = await getCategories();
+    return all.filter(c => c.parent_id === parentId).sort((a, b) => a.sort_order - b.sort_order);
+  };
+
+  // القائمة اللي بتتعرض فعليًا في الرئيسية — بتتحكم فيها إعداد
+  // category_display_mode من سلطان ERP (مربوط بـ initSettings):
+  //  'main' (افتراضي): الأقسام الرئيسية زي ما هي دايمًا
+  //  'sub': كل الأقسام الفرعية تحت كل قسم رئيسي، مبسوطة في قايمة واحدة —
+  //         القسم الرئيسي اللي مالوش أقسام فرعية بيتعرض هو نفسه بدل ما يختفي
+  const getHomeCategories = async () => {
+    const mode = getSettings().category_display_mode === 'sub' ? 'sub' : 'main';
+    const mainCats = await getMainCategories();
+    if (mode !== 'sub' || !mainCats.length) return mainCats;
+
+    return withCache(
+      Storage.KEYS.CACHE_HOME_CATS + '_sub',
+      CONFIG.CACHE.TTL_CATEGORIES,
+      async () => {
+        const results = await Promise.allSettled(mainCats.map(c => getSubcategories(c.id)));
+        const flat = [];
+        results.forEach((r, i) => {
+          if (r.status === 'fulfilled' && r.value.length) flat.push(...r.value);
+          else flat.push(mainCats[i]); // مفيش أقسام فرعية (أو فشل الجلب) — اعرض القسم الرئيسي نفسه
+        });
+        return flat;
+      }
+    );
+  };
+
+  // ─── Areas ─────────────────────────────────────────────────────
+  const getAreas = async () => {
+    return withCache(
+      Storage.KEYS.CACHE_AREAS,
+      CONFIG.CACHE.TTL_AREAS,
+      () => getProvider().getAreas()
+    );
+  };
+
+  // ─── Orders ────────────────────────────────────────────────────
+  const PENDING_ORDER_KEY = 'sultan_pending_order_draft';
+
+  // ★ لو المستخدم دوس "أعد المحاولة" بعد فشل، submitOrder كانت بتولّد
+  //   orderId جديد كل مرة — يعني لو المحاولة الأولى نجحت فعلاً في سلطان
+  //   بس الرد ضاع (مشكلة نت شائعة)، كل محاولة تانية كانت بتبعت طلب
+  //   مكرر منفصل. دلوقتي بنحتفظ بنفس الـ id طول ما محتوى السلة نفسه لم
+  //   يتغيّر، فأي محاولة تانية بترجع لنفس الطلب بدل ما تعمل واحد جديد.
+  const submitOrder = async (cartItems, notes = '') => {
+    const customer = Storage.get(Storage.KEYS.CUSTOMER);
+    if (!customer) throw new Error('لم يتم تسجيل العميل');
+    if (!cartItems.length) throw new Error('السلة فارغة');
+
+    const cartSignature = JSON.stringify(cartItems.map(i => [i.id, i.quantity]).sort());
+    const draft = Storage.get(PENDING_ORDER_KEY);
+    const isRetryOfSameCart = !!(draft && draft.signature === cartSignature);
+
+    // ★ لو ده إعادة محاولة لطلب فشل قبل كده، اتأكد الأول إن موظف مكملهوش
+    //   من عنده في سلطان ERP في الوقت اللي فات (شاشة "سلال حالية") — لو
+    //   أيوه، منبعتوش تاني (كان هيبقى تكرار حقيقي) وامسح المسودة القديمة.
+    if (isRetryOfSameCart) {
+      let fulfilled = false;
+      try {
+        fulfilled = await getProvider().checkCartFulfilled(customer.id, new Date(draft.ts).toISOString());
+      } catch {
+        // فشل التحقق نفسه (مشكلة نت) — اعتبره لأ وكمل عادي، أفضل من منع الإرسال بالكامل
+      }
+      if (fulfilled) {
+        Storage.remove(PENDING_ORDER_KEY);
+        const err = new Error('الطلب ده اتنفّذ بالفعل من عندنا');
+        err.alreadyFulfilled = true;
+        throw err;
+      }
+    }
+
+    const orderId = isRetryOfSameCart ? draft.id : generateId('ORD');
+    Storage.set(PENDING_ORDER_KEY, { id: orderId, signature: cartSignature, notes, ts: Date.now() });
+
+    const now = new Date().toISOString();
+    const total = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
+
+    const orderData = {
+      id:             orderId,
+      customer_id:    customer.id,
+      customer_name:  customer.name       || '',
+      customer_phone: customer.phone      || '',
+      total_amount:   total,
+      status:         'new',
+      notes,
+      created_at:     now,
+      erp_order_id:   '',
+    };
+
+    const itemsData = cartItems.map((item, idx) => ({
+      id: `${orderId}-ITEM-${idx + 1}`,
+      order_id: orderId,
+      product_id: item.id,
+      product_name: item.name_ar,
+      unit: item.unit,
+      price: item.price,
+      quantity: item.quantity,
+      subtotal: item.price * item.quantity,
+    }));
+
+    await getProvider().submitOrder(orderData, itemsData);
+    Storage.remove(PENDING_ORDER_KEY); // نجحت فعلاً — امسح المسودة عشان الطلب الجاي ياخد id جديد
+
+    // حفظ الطلب محلياً
+    const history = Storage.get(Storage.KEYS.ORDERS_HISTORY) || [];
+    history.unshift({ ...orderData, items: itemsData });
+    Storage.set(Storage.KEYS.ORDERS_HISTORY, history.slice(0, 50));
+    Storage.set(Storage.KEYS.LAST_ORDER, { ...orderData, items: itemsData });
+
+    return { orderId, total, orderData, itemsData };
+  };
+
+  // هل فيه مسودة طلب فشلت وسلة العميل لسه مطابقة لمحتواها؟ — تُستخدم
+  // للمحاولة التلقائية عند رجوع النت من غير ما العميل يضغط زرار
+  const hasPendingOrderDraft = (cartItems) => {
+    const draft = Storage.get(PENDING_ORDER_KEY);
+    if (!draft || !cartItems?.length) return false;
+    return draft.signature === JSON.stringify(cartItems.map(i => [i.id, i.quantity]).sort());
+  };
+
+  // ملاحظات آخر محاولة فاشلة (لو موجودة) — عشان المحاولة التلقائية تبعتها
+  // بنفس النص حتى لو التطبيق اتقفل وفتح تاني (خانة الملاحظات بترجع فاضية)
+  const getPendingOrderDraftNotes = () => Storage.get(PENDING_ORDER_KEY)?.notes || '';
+
+  // لو مطابقة المخزون شالت كل أصناف المسودة الفاشلة (كلها خلصت)، مفيش
+  // حاجة نبعتها تاني — نمسح المسودة عشان hasPendingOrderDraft ميفضلش
+  // شايفها معلّقة على سلة فاضية للأبد
+  const clearPendingOrderDraft = () => Storage.remove(PENDING_ORDER_KEY);
+
+  const getOrdersHistory = () => {
+    return Storage.get(Storage.KEYS.ORDERS_HISTORY) || [];
+  };
+
+  // حالة الطلبات الحيّة من السيرفر (بعكس getOrdersHistory اللي بترجع من
+  // التخزين المحلي بس) — عن طريق الـ Provider الحالي، مش SheetsProvider
+  // مباشرة، عشان يشتغل صح بعد التحويل لـ ERP
+  const getOrders = (customerId) => getProvider().getOrders(customerId);
+
+  // كشف حساب العميل (الرصيد + حد الائتمان) — للعرض في صفحة البروفايل فقط
+  const getCustomerAccount = async (customerId) => {
+    try { return await getProvider().getCustomerAccount(customerId); }
+    catch { return null; }
+  };
+
+  // نظام نقاط الولاء — RPCs جديدة، ممكن متكونش موجودة لسه (قبل ما الـmigration
+  // يتشغّل) أو تكون متوفرة بس مطفية (enabled=false) — الفشل هنا صامت دايمًا
+  const getLoyaltySettings = async () => {
+    try { return await getProvider().getLoyaltySettings(); }
+    catch { return { enabled: false, points_per_egp: 0 }; }
+  };
+  const getCustomerLoyalty = async (customerId) => {
+    try { return await getProvider().getCustomerLoyalty(customerId); }
+    catch { return 0; }
+  };
+
+  const getLastOrder = () => {
+    return Storage.get(Storage.KEYS.LAST_ORDER) || null;
+  };
+
+  // ─── Customer ──────────────────────────────────────────────────
+  const registerCustomer = async (data) => {
+    const id = generateId('CUS');
+    const customerData = {
+      id,
+      name:         data.name,
+      shop_name:    data.shop_name,
+      phone:        data.phone,
+      area_id:      data.area_id,
+      area_name:    data.area_name,
+      registered_at: new Date().toISOString(),
+      erp_customer_id: '',
+    };
+
+    // لو الـ Provider رجّع id حقيقي (زي ERPProvider اللي بيرجّع uuid العميل
+    // الحقيقي في سلطان — سواء جديد أو اتربط برقم تليفون موجود)، استخدمه
+    // بدل الـ id المحلي المؤقت — كل نداء تاني (submitOrder، getOrders...)
+    // محتاج الـ id ده يكون حقيقي عشان يشتغل. SheetsProvider مش بيرجّع id،
+    // فالسلوك القديم فاضل زي ما هو من غيره.
+    const providerResult = await getProvider().registerCustomer(customerData);
+    if (providerResult?.id) customerData.id = providerResult.id;
+
+    Storage.set(Storage.KEYS.CUSTOMER, customerData);
+    Storage.set(Storage.KEYS.REGISTERED, true);
+    return customerData;
+  };
+
+  const getCustomer    = () => Storage.get(Storage.KEYS.CUSTOMER);
+  const isRegistered   = () => !!Storage.get(Storage.KEYS.REGISTERED);
+
+  const updateCustomer = async (data) => {
+    const current = getCustomer();
+    const updated  = { ...current, ...data };
+    Storage.set(Storage.KEYS.CUSTOMER, updated);
+    try { await getProvider().updateCustomer(updated); }
+    catch (e) { console.warn('[Customer] sheet update failed:', e); }
+    return updated;
+  };
+
+  const savePushSubscription = (sub) => getProvider().savePushSubscription(sub);
+  const removePushSubscription = (endpoint) => getProvider().removePushSubscription(endpoint);
+  const syncCart = (customerId, items) => getProvider().syncCart(customerId, items);
+  const clearCart = (customerId) => getProvider().clearCart(customerId);
+
+  const updateCustomerFavorites = async (customerId, phone, favString) => {
+    try {
+      await getProvider().updateCustomerFavorites(customerId, phone, favString);
+    } catch {}
+  };
+
+  const getCustomerByPhone = async (phone) => {
+    try { return await getProvider().getCustomerByPhone(phone); }
+    catch { return null; }
+  };
+
+  // ─── Banners ───────────────────────────────────────────────────
+  const getBanners = async () => {
+    try {
+      const rows = await getProvider().getBanners();
+      return rows
+        .filter(b => b.is_active)
+        .sort((a, b) => a.sort_order - b.sort_order);
+    } catch { return []; }
+  };
+
+  // ─── VIP Pricing ───────────────────────────────────────────────
+  const applyCustomerPricing = (products) => {
+    const customer = getCustomer();
+    const isVip = String(customer?.customer_type || '').toLowerCase() === 'vip';
+    if (!isVip) return products;
+    return products.map(p => ({
+      ...p,
+      price: (p.price_vip && p.price_vip > 0) ? p.price_vip : p.price,
+    }));
+  };
+
+  // ─── Settings ──────────────────────────────────────────────────
+  const SETTINGS_CACHE_KEY = 'sultan_settings_cache';
+  const SETTINGS_TTL       = 5 * 60 * 1000; // 5 دقائق (كان 30)
+
+  const initSettings = async () => {
+    try {
+      const cached   = Storage.get(SETTINGS_CACHE_KEY);
+      const cacheTs  = Storage.get(SETTINGS_CACHE_KEY + '_ts');
+      const isValid  = cacheTs && (Date.now() - cacheTs) < SETTINGS_TTL;
+
+      // Bug: {} فارغ truthy — يجب التحقق من وجود بيانات فعلية
+      const hasCachedData = cached && Object.keys(cached).length > 0;
+      const isValidCache  = isValid && hasCachedData;
+
+      const settings = isValidCache ? cached : await getProvider().getSettings();
+
+      // لا تحفظ في الكاش إذا كانت النتيجة فارغة — حتى تُعاد المحاولة
+      if (!isValidCache && Object.keys(settings || {}).length > 0) {
+        Storage.set(SETTINGS_CACHE_KEY,         settings);
+        Storage.set(SETTINGS_CACHE_KEY + '_ts', Date.now());
+      }
+
+      // تطبيق الإعدادات على CONFIG
+      // Fix #3: يدعم المفتاحَين min_order_amount و minimum_order
+      const minVal = settings.min_order_amount ?? settings.minimum_order;
+      if (minVal !== undefined && minVal !== '')
+        CONFIG.ORDER.MIN_AMOUNT = Number(minVal) || 0;
+      if (settings.whatsapp_number)
+        CONFIG.WHATSAPP.NUMBER  = String(settings.whatsapp_number);
+      if (settings.store_name)
+        CONFIG.APP.NAME         = String(settings.store_name);
+
+      return settings;
+    } catch (e) {
+      console.warn('[Settings] load failed:', e);
+      return {};
+    }
+  };
+
+  const getSettings = () => Storage.get(SETTINGS_CACHE_KEY) || {};
+
+  // مسح الكاش المحلي للمنتجات/الأقسام/المناطق/الإعدادات بس — من غير ما يمسح
+  // تسجيل العميل — مفيد لو الأسعار/الأصناف/الحدود اتغيّرت من سلطان ERP
+  // والعميل لسه شايف نسخة قديمة متخزّنة عنده
+  const clearDataCache = () => {
+    Storage.remove(Storage.KEYS.CACHE_PRODUCTS);
+    Storage.remove(Storage.KEYS.CACHE_CATS);
+    Storage.remove(Storage.KEYS.CACHE_AREAS);
+    Storage.remove(Storage.KEYS.CACHE_HOME_CATS + '_sub');
+    Storage.remove(SETTINGS_CACHE_KEY);
+    Storage.remove(SETTINGS_CACHE_KEY + '_ts');
+  };
+  const sendWhatsApp = (order, items) => {
+    const customer = getCustomer();
+    let msg = `🛒 *طلب جديد — سلطان للمواد الغذائية*\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━\n`;
+    msg += `👤 *العميل:* ${customer?.name || '—'}\n`;
+    msg += `🏪 *المحل:* ${customer?.shop_name || '—'}\n`;
+    msg += `📍 *المنطقة:* ${customer?.area_name || '—'}\n`;
+    msg += `📞 *الهاتف:* ${customer?.phone || '—'}\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━\n`;
+    msg += `📦 *المنتجات:*\n`;
+    items.forEach(item => {
+      msg += `• ${item.product_name} × ${item.quantity} ${item.unit} — ${(item.price * item.quantity).toFixed(2)} ج.م\n`;
+    });
+    msg += `━━━━━━━━━━━━━━━━━━━━\n`;
+    msg += `💰 *الإجمالي: ${order.total_amount.toFixed(2)} ج.م*\n`;
+    if (order.notes) msg += `📝 *ملاحظات:* ${order.notes}\n`;
+    msg += `🔖 *رقم الطلب:* ${order.id}`;
+
+    const encoded = encodeURIComponent(msg);
+    window.location.href = `https://api.whatsapp.com/send?phone=${CONFIG.WHATSAPP.NUMBER}&text=${encoded}`;
+  };
+
+  return {
+    getProducts, getProductsByCategory, getFeatured, getBestsellers,
+    searchProducts, getProductById,
+    getCategories, getMainCategories, getSubcategories, getHomeCategories,
+    getAreas, getBanners,
+    submitOrder, hasPendingOrderDraft, getPendingOrderDraftNotes, clearPendingOrderDraft, getOrdersHistory, getLastOrder, getOrders, getCustomerAccount,
+    getLoyaltySettings, getCustomerLoyalty,
+    registerCustomer, getCustomer, isRegistered, updateCustomer,
+    getCustomerByPhone, updateCustomerFavorites,
+    savePushSubscription, removePushSubscription,
+    syncCart, clearCart,
+    sendWhatsApp,
+    initSettings, getSettings, clearDataCache,
+    generateId,
+  };
+})();

@@ -1,0 +1,454 @@
+/**
+ * Sultan Foods — App Bootstrap
+ * ==============================
+ * نقطة الدخول الرئيسية للتطبيق
+ */
+
+// ─── Shared Utilities (متاحة لكل الصفحات) ────────────────────────
+
+const showToast = (() => {
+  const container = document.getElementById('toast-container');
+  return (msg, duration = 2500) => {
+    if (!container) return;
+    const el = document.createElement('div');
+    el.className = 'toast';
+    el.textContent = msg;
+    container.appendChild(el);
+    setTimeout(() => el.remove(), duration);
+  };
+})();
+
+// ─── Product Card Renderer (مشترك) ───────────────────────────────
+
+const renderProductCard = (p) => {
+  window._productCache[p.id] = p; // Fix: يُخزَّن هنا لاستعادة زر + عند حذف من السلة
+  const inCart = Cart.getQty(p.id) > 0;
+  const isFav  = Favorites.has(p.id);
+
+  return `
+    <div class="product-card" data-pid="${p.id}" onclick="navigateTo('product', {id:'${p.id}'})">
+      <div class="product-img-wrap">
+        <img
+          data-src="${p.image_url || ''}"
+          src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E"
+          alt="${p.name_ar}"
+          class="loading"
+          loading="lazy">
+        ${p.is_featured ? `<span class="badge-featured">⭐ عرض</span>` : ''}
+        ${!p.is_available ? `<div class="badge-unavailable">غير متوفر</div>` : ''}
+        <button class="fav-btn ${isFav ? 'active' : ''}"
+          data-fav-btn="${p.id}"
+          onclick="event.stopPropagation(); Favorites.toggle('${p.id}')">
+          ${isFav ? '❤️' : '🤍'}
+        </button>
+      </div>
+      <div class="product-info">
+        <div class="product-name">${p.name_ar}</div>
+        <div class="price-row">
+          <div class="product-price">
+            <span class="currency">ج.م</span>${p.price.toFixed(2)}
+          </div>
+          <span class="unit-inline">/ ${p.unit}</span>
+        </div>
+        <div class="product-cart-ctrl cart-row" id="pcc-${p.id}">
+          ${renderCartCtrl(p)}
+        </div>
+      </div>
+    </div>
+  `;
+};
+
+const renderCartCtrl = (p) => {
+  if (!p.is_available) return '';
+  const qty = Cart.getQty(p.id);
+  if (qty > 0) {
+    return `<div class="qty-control" id="qty-ctrl-${p.id}">
+      <button class="qty-btn" onclick="event.stopPropagation(); Cart.updateQty('${p.id}', ${qty - 1})">−</button>
+      <span class="qty-num">${qty}</span>
+      <button class="qty-btn" onclick="event.stopPropagation(); Cart.updateQty('${p.id}', ${qty + 1})">+</button>
+    </div>`;
+  }
+  return `<button class="add-btn" onclick="event.stopPropagation(); Cart.add(${JSON.stringify(p).replace(/"/g,'&quot;')})"><span class="plus">+</span> أضف</button>`;
+};
+
+// تحديث فوري لأزرار الكمية عند تغيير السلة
+const refreshProductCards = (items) => {
+  items.forEach(item => {
+    const ctrl = document.getElementById(`pcc-${item.id}`);
+    if (!ctrl) return;
+    const addBtn = ctrl.querySelector('.add-btn');
+    const qtyCtrl = ctrl.querySelector('.qty-control');
+    if (qtyCtrl) {
+      // تحديث الكمية في العنصر الموجود
+      const numEl = qtyCtrl.querySelector('.qty-num');
+      if (numEl) numEl.textContent = item.quantity;
+      const minus = qtyCtrl.querySelector('.qty-btn:first-child');
+      const plus  = qtyCtrl.querySelector('.qty-btn:last-child');
+      if (minus) minus.setAttribute('onclick', `event.stopPropagation(); Cart.updateQty('${item.id}', ${item.quantity - 1})`);
+      if (plus)  plus.setAttribute('onclick',  `event.stopPropagation(); Cart.updateQty('${item.id}', ${item.quantity + 1})`);
+    } else if (addBtn) {
+      // تحويل زر + إلى qty-control
+      addBtn.outerHTML = `<div class="qty-control" id="qty-ctrl-${item.id}">
+        <button class="qty-btn" onclick="event.stopPropagation(); Cart.updateQty('${item.id}', 0)">−</button>
+        <span class="qty-num">${item.quantity}</span>
+        <button class="qty-btn" onclick="event.stopPropagation(); Cart.updateQty('${item.id}', ${item.quantity + 1})">+</button>
+      </div>`;
+    }
+  });
+
+  // أي منتج اتشال من السلة — رجّع زر +
+  document.querySelectorAll('.product-cart-ctrl').forEach(ctrl => {
+    const pid = ctrl.id.replace('pcc-', '');
+    if (!pid || Cart.getQty(pid) > 0) return;
+    const qtyCtrl = ctrl.querySelector('.qty-control');
+    if (!qtyCtrl) return;
+    // ابحث عن بيانات المنتج من زر الإضافة القديم أو من data attr
+    const card = ctrl.closest('[data-pid]');
+    if (!card) { ctrl.innerHTML = ''; return; }
+    // استعادة زر + من data
+    const pData = window._productCache?.[pid];
+    if (pData) {
+      ctrl.innerHTML = `<button class="add-btn" onclick="event.stopPropagation(); Cart.add(${JSON.stringify(pData).replace(/"/g,'&quot;')})"><span class="plus">+</span> أضف</button>`;
+    }
+  });
+};
+
+// ─── "بترجع تطلبه" — من سجل الطلبات الفعلي (مش تخمين) ──────────────
+// مشتركة بين الرئيسية (home.js) والسلة (cart.js: "هتحتاج كمان؟")، عشان
+// منكررش نفس حساب التكرار مرتين
+const getBuyAgainProducts = async (limit = 10, excludeIds = []) => {
+  const history = API.getOrdersHistory();
+  if (!history.length) return [];
+
+  const freq = {};
+  history.forEach(o => (o.items || []).forEach(it => {
+    if (!it.product_id) return;
+    freq[it.product_id] = (freq[it.product_id] || 0) + (Number(it.quantity) || 1);
+  }));
+
+  const exclude = new Set(excludeIds.map(String));
+  const topIds = Object.entries(freq)
+    .sort((a, b) => b[1] - a[1])
+    .map(([id]) => id)
+    .filter(id => !exclude.has(String(id)))
+    .slice(0, limit);
+  if (!topIds.length) return [];
+
+  const allProducts = await API.getProducts();
+  return topIds
+    .map(id => allProducts.find(p => String(p.id) === String(id)))
+    .filter(p => p && p.is_available);
+};
+
+// ─── Lazy Image Loading ───────────────────────────────────────────
+
+const lazyLoader = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      const img = entry.target;
+      const src = img.dataset.src;
+      if (src) {
+        img.src = src;
+        img.onload = () => img.classList.replace('loading', 'loaded');
+        img.onerror = () => {
+          img.classList.replace('loading', 'loaded');
+          img.style.display = 'none';
+        };
+        lazyLoader.unobserve(img);
+      }
+    }
+  });
+}, { rootMargin: '200px' });
+
+const observeLazyImages = () => {
+  document.querySelectorAll('img[data-src]').forEach(img => lazyLoader.observe(img));
+};
+
+// MutationObserver لمراقبة الصور الجديدة
+new MutationObserver(() => observeLazyImages())
+  .observe(document.getElementById('main') || document.body, { childList: true, subtree: true });
+
+// ─── App Init ─────────────────────────────────────────────────────
+
+const App = {
+  async init() {
+    // Fix #1: تسجيل مستمع beforeinstallprompt أولاً قبل أي await
+    // حتى لا يُفوَّت الحدث أثناء splash / تسجيل
+    this.setupPWA();
+
+    // 0. Product cache للـ refreshProductCards
+    window._productCache = {};
+
+    // 1. تهيئة الطبقات
+    Storage.set;
+    Cart.init();
+    Favorites.init();
+
+    // تحديث فوري لأزرار الكمية عند أي تغيير في السلة
+    Cart.onChange((items) => refreshProductCards(items));
+
+    // 2. تسجيل الصفحات في الراوتر
+    Router.register('home',      (p) => HomePage.render(p));
+    Router.register('category',  (p) => CategoryPage.render(p));
+    Router.register('search',    (p) => SearchPage.render(p));
+    Router.register('cart',      (p) => CartPage.render(p));
+    Router.register('favorites', (p) => FavoritesPage.render(p));
+    Router.register('orders',    (p) => OrdersPage.render(p));
+    Router.register('profile',   (p) => ProfilePage.render(p));
+    Router.register('product',   (p) => ProductPage.render(p));
+
+    // 3. تهيئة Search
+    SearchPage.init();
+
+    // 4. تحميل الإعدادات بالتوازي مع السبلاش (مش بعده) — عشان نعرف قبل ما
+    //    نفتح التطبيق لو وضع الإجازة شغال من سلطان ERP، من غير ما نستنى
+    //    وقت إضافي فوق مدة السبلاش العادية
+    const settingsPromise = API.initSettings().catch(() => ({}));
+    await this.showSplash();
+    const settings = await settingsPromise;
+
+    // 4a. وضع الإجازة — قفل كامل: العميل يشوف شاشة الإجازة بس، ومفيش وصول
+    //     لباقي التطبيق خالص لحد ما يتقفل وضع الإجازة من سلطان ERP
+    if (settings.vacation_mode) {
+      this.showVacationScreen(settings);
+      return;
+    }
+
+    // 5a. ★ توفيق مهم لمرة واحدة: أي عميل اتسجّل قبل التحويل لـ ERP (زمن
+    //     الشيت) عنده id محلي وهمي (زي CUS-XXXX-YYYY) مش uuid حقيقي في
+    //     سلطان ERP. بما إن isRegistered() already true، التسجيل ما بيتكررش
+    //     تاني، فيفضل عالق بالـ id الوهمي ده — وده بيكسر كل حاجة محتاجة
+    //     الـ id (تحميل المنتجات بالسعر الصح، إرسال الطلب...) لأن الـ RPC
+    //     بيتوقع uuid حقيقي. الإصلاح: لو الـ id مش شكل uuid، اربطه فورًا
+    //     بنفس رقم تليفونه على عميل سلطان ERP حقيقي (أو سجّله لو مالوش
+    //     نظير) — من غير ما المستخدم يحس أو يتطلب منه يعيد أي بيانات.
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (API.isRegistered()) {
+      const c = API.getCustomer();
+      const hasRealId = c?.id && UUID_RE.test(c.id);
+      if (c && !hasRealId && c.phone) {
+        try {
+          let real = await API.getCustomerByPhone(c.phone);
+          if (!real) {
+            // ★ c.area_id لو موجود ده id منطقة من عصر الشيت — مش uuid حقيقي
+            //   في customer_regions، فبعته زي ما هو كان بيكسر الـ RPC بصمت
+            //   (خطأ تحويل نوع) قبل حتى ما يوصل لمنطق التسجيل — تسيبه null
+            //   أسلم من غير ما يوقف التسجيل، والأدمن يظبط المنطقة بعدين
+            const safeAreaId = c.area_id && UUID_RE.test(c.area_id) ? c.area_id : null;
+            real = await API.registerCustomer({
+              name: c.name, shop_name: c.shop_name, phone: c.phone,
+              area_id: safeAreaId, area_name: c.area_name,
+            });
+          } else {
+            Storage.set(Storage.KEYS.CUSTOMER, { ...c, ...real });
+          }
+        } catch (e) {
+          console.warn('[Migrate] فشل ربط العميل بـ id حقيقي، هيتطلب تسجيل من جديد:', e);
+          // لو الإصلاح الصامت فشل لأي سبب تاني، امسح علامة "مسجّل" بدل ما
+          //   يفضل عالق للأبد على id مكسور — المرة الجاية يفتح التطبيق
+          //   هيشوف شاشة التسجيل تاني (فورم فاضي، هيكتب بياناته تاني).
+          //   في زرار "إعادة التسجيل" يدوي كمان دلوقتي من صفحة البروفايل.
+          Storage.remove(Storage.KEYS.REGISTERED);
+        }
+      }
+    }
+
+    // 5b. تحديث بيانات العميل صامتاً (VIP + customer_type)
+    if (API.isRegistered()) {
+      const c = API.getCustomer();
+      if (c?.phone) {
+        API.getCustomerByPhone(c.phone).then(fresh => {
+          if (!fresh) return;
+          // حدّث فقط لو في تغيير حقيقي
+          if (fresh.customer_type !== c.customer_type || fresh.name !== c.name) {
+            Storage.set(Storage.KEYS.CUSTOMER, { ...c, ...fresh });
+          }
+        }).catch(() => {});
+      }
+    }
+
+    // 5c. تحديث حالة الطلبات صامتاً في الخلفية — من أول ما التطبيق يفتح،
+    //     مش لما المستخدم يفتح تبويب "طلباتي" بس (نفس منطق تحديث بيانات
+    //     العميل فوق، بس للطلبات)
+    if (API.isRegistered()) {
+      const c = API.getCustomer();
+      if (c?.id) {
+        API.getOrders(c.id).then(serverOrders => {
+          const history = API.getOrdersHistory();
+          let changed = false;
+          serverOrders.forEach(updated => {
+            const idx = history.findIndex(o => o.id === updated.id);
+            if (idx !== -1 && history[idx].status !== updated.status) {
+              history[idx] = { ...history[idx], status: updated.status };
+              changed = true;
+            }
+          });
+          if (changed) Storage.set(Storage.KEYS.ORDERS_HISTORY, history);
+        }).catch(() => {});
+      }
+    }
+
+    // 6. تحقق التسجيل
+    if (!API.isRegistered()) {
+      await RegisterPage.init();
+    }
+
+    // 7. الانطلاق للرئيسية
+    Router.navigate('home');
+
+    // 7a. بانر إعلاني بحجم الشاشة — مرة واحدة لكل فتحة تطبيق (بند 13)
+    this.showPopupBanner();
+
+    // 8. Offline detection
+    this.setupOffline();
+
+    // 9. زر الرجوع في الأندرويد
+    this.setupBackButton();
+  },
+
+  async showPopupBanner() {
+    if (sessionStorage.getItem('popupBannerShown')) return;
+    try {
+      const banners = await API.getBanners();
+      const popup = (banners || []).find(b => b.display_type === 'popup' && b.image_url);
+      if (!popup) return;
+      sessionStorage.setItem('popupBannerShown', '1');
+
+      const overlay = document.createElement('div');
+      overlay.id = 'popup-banner-overlay';
+      // ★ inset:0 لوحدها من غير width/height صريحة — نفس الباترن المستخدم
+      //   بالظبط فى #splash-screen و#register-screen (شغالين صح من غير شكوى).
+      //   السبب الحقيقي وراء "أكبر من الشاشة": 100vh على المحمول بتتحسب
+      //   بارتفاع الشاشة الكامل من غير شريط عنوان المتصفح — أطول من
+      //   المساحة الظاهرة فعليًا، فالبانر كان بيمتد تحت حافة الشاشة الحقيقية.
+      //   إضافة width:100vw/height:100vh فى التعديل اللي فات كانت هي نفسها
+      //   سبب المشكلة (مكنتش ظاهرة فى أداة الاختبار لأنها مش بتحاكي شريط
+      //   عنوان متصفح الموبايل الديناميكي).
+      overlay.style.cssText = 'position:fixed;inset:0;z-index:8500;background:#1a4731;overflow:hidden';
+      overlay.innerHTML = `
+        <img src="${popup.image_url}" alt="${popup.title}"
+          style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain"
+          ${popup.link_to ? `onclick="navigateTo('category', {id:'${popup.link_to}'}); document.getElementById('popup-banner-overlay').remove()"` : ''}>
+        <button onclick="document.getElementById('popup-banner-overlay').remove()"
+          style="position:absolute;top:calc(env(safe-area-inset-top,0px) + .75rem);left:.75rem;
+                 width:36px;height:36px;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;
+                 border:none;font-size:1.15rem;line-height:1;cursor:pointer">✕</button>`;
+      document.body.appendChild(overlay);
+      // ★ يقفل لوحده بعد 10 ثوانى لو المستخدم مضغطش ✕
+      setTimeout(() => { document.getElementById('popup-banner-overlay')?.remove(); }, 10000);
+    } catch (e) { console.warn('[PopupBanner] فشل التحميل:', e); }
+  },
+
+  showVacationScreen(settings) {
+    const el = document.getElementById('vacation-screen');
+    if (!el) return;
+    const msgEl = document.getElementById('vacation-message');
+    if (msgEl && settings.vacation_message) msgEl.textContent = settings.vacation_message;
+    const waEl = document.getElementById('vacation-whatsapp');
+    if (waEl && CONFIG.WHATSAPP?.URL) {
+      waEl.href = CONFIG.WHATSAPP.URL;
+      waEl.style.display = 'inline-flex';
+    }
+    el.classList.add('active');
+  },
+
+  async showSplash() {
+    return new Promise(resolve => {
+      setTimeout(() => {
+        const splash = document.getElementById('splash-screen');
+        if (splash) {
+          splash.classList.add('hide');
+          setTimeout(() => { splash.remove(); resolve(); }, 500);
+        } else {
+          resolve();
+        }
+      }, CONFIG.UI.SPLASH_DURATION);
+    });
+  },
+
+  setupOffline() {
+    const banner = document.getElementById('offline-banner');
+    const update = () => {
+      if (banner) banner.classList.toggle('show', !navigator.onLine);
+    };
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    update();
+  },
+
+  setupBackButton() {
+    // أضف entry أولية حتى يُطلق Android حدث popstate عند الضغط على زر الرجوع
+    window.history.pushState(null, '', location.href);
+
+    let exitWarning = false;
+
+    window.addEventListener('popstate', () => {
+      if (Router.canGoBack()) {
+        // ─── يوجد صفحة سابقة ───
+        // أعد إضافة entry حتى يظل زر الرجوع قابلاً للاستخدام
+        window.history.pushState(null, '', location.href);
+        Router.goBack();
+        exitWarning = false;
+
+      } else {
+        // ─── نحن في الصفحة الرئيسية ───
+        if (exitWarning) {
+          // الضغطة الثانية: اترك المتصفح يتصرف طبيعياً (يُغلق/يُصغّر التطبيق)
+          // لا نُعيد pushState هنا
+        } else {
+          // الضغطة الأولى: أعد Entry وأظهر التحذير
+          window.history.pushState(null, '', location.href);
+          exitWarning = true;
+          showToast('اضغط مرة أخرى للخروج من التطبيق');
+          setTimeout(() => { exitWarning = false; }, 2000);
+        }
+      }
+    });
+  },
+
+  setupPWA() {
+    let deferredPrompt = null;
+
+    // Fix #1: هذه الدالة تُستدعى دائماً عند الضغط على أي زر تثبيت
+    const doInstall = async () => {
+      if (!deferredPrompt) {
+        // iOS أو متصفح لا يدعم — تعليمات يدوية
+        showToast('📲 افتح قائمة المتصفح ← "إضافة إلى الشاشة الرئيسية"');
+        return;
+      }
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        document.getElementById('pwa-install-banner')?.style.setProperty('display', 'none');
+        document.getElementById('install-btn')?.style.setProperty('display', 'none');
+      }
+      deferredPrompt = null;
+    };
+
+    // Fix #1: تسجيل زر صفحة التسجيل فوراً (موجود في DOM منذ البداية)
+    document.getElementById('reg-install-btn')
+      ?.addEventListener('click', doInstall);
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+
+      // إظهار البانر البارز في الأعلى
+      const banner = document.getElementById('pwa-install-banner');
+      if (banner) banner.style.display = 'flex';
+
+      // زر التثبيت في صفحة البروفايل أيضاً
+      const profileBtn = document.getElementById('install-btn');
+      if (profileBtn) profileBtn.style.display = 'block';
+
+      document.getElementById('pwa-install-banner-btn')?.addEventListener('click', doInstall);
+      document.getElementById('pwa-install')?.addEventListener('click', doInstall);
+      document.getElementById('pwa-install-banner-close')?.addEventListener('click', () => {
+        if (banner) banner.style.display = 'none';
+      });
+    });
+  },
+};
+
+// ─── Start ────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => App.init());

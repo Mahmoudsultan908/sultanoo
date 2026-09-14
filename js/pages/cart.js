@@ -1,0 +1,352 @@
+/**
+ * Sultan Foods — Cart Page
+ */
+
+const CartPage = (() => {
+  const render = () => {
+    renderItems();
+    renderMinOrderProgress();
+    renderCrossSell();
+    Cart.onChange(() => {
+      if (Router.getCurrentPage() === 'cart') { renderItems(); renderMinOrderProgress(); renderCrossSell(); }
+    });
+    // مطابقة هادئة مع المخزون الحيّ لحظة فتح السلة — لو صنف خلص وهو قاعد
+    // في سلة عميل من زمان، يبان له على طول بدل ما يتفاجئ وقت الإرسال
+    if (!Cart.isEmpty()) checkStockSilently();
+    // لو قافل التطبيق تماماً وقت ما فشل الإرسال وفتحه تاني بعد ما النت
+    // رجع، حدث 'online' مبيتسجّلش أصلاً (الصفحة اتقفلت) — فبنتأكد هنا كمان
+    if (navigator.onLine && !Cart.isEmpty() && API.hasPendingOrderDraft(Cart.getItems())) {
+      retryPendingOrder(API.getPendingOrderDraftNotes());
+    }
+  };
+
+  const checkStockSilently = async () => {
+    try {
+      const fresh = await API.getProducts(true);
+      const { changed, messages } = Cart.validateStock(fresh);
+      if (changed) showToast(messages.join(' • '), 5000);
+    } catch {}
+  };
+
+  const renderItems = () => {
+    const listEl = document.getElementById('cart-list');
+    const emptyEl = document.getElementById('cart-empty');
+    const footerEl = document.getElementById('cart-footer');
+    const totalEl = document.getElementById('cart-total');
+
+    if (Cart.isEmpty()) {
+      listEl.innerHTML = '';
+      emptyEl.classList.remove('hidden');
+      footerEl.classList.add('hidden');
+      return;
+    }
+
+    emptyEl.classList.add('hidden');
+    footerEl.classList.remove('hidden');
+
+    listEl.innerHTML = Cart.getItems().map(item => `
+      <div class="cart-item" id="cart-item-${item.id}">
+        <img class="cart-item-img"
+          src="${item.image_url || ''}"
+          alt="${item.name_ar}"
+          loading="lazy"
+          onerror="this.src='';this.style.background='var(--gray-100)'">
+        <div class="cart-item-info">
+          <div class="cart-item-name">${item.name_ar}</div>
+          <div class="cart-item-unit">${item.unit}</div>
+          <div class="cart-item-price">${(item.price * item.quantity).toFixed(2)} ج.م</div>
+        </div>
+        <div class="cart-item-actions">
+          <button class="cart-item-delete" onclick="Cart.remove('${item.id}')">🗑️</button>
+          <div class="qty-control">
+            <button class="qty-btn" onclick="Cart.updateQty('${item.id}', ${item.quantity - 1})">−</button>
+            <span class="qty-num">${item.quantity}</span>
+            <button class="qty-btn" onclick="Cart.updateQty('${item.id}', ${item.quantity + 1})">+</button>
+          </div>
+        </div>
+      </div>
+    `).join('');
+
+    if (totalEl) totalEl.textContent = Cart.getTotal().toFixed(2);
+    const countEl = document.getElementById('cart-items-count');
+    if (countEl) countEl.textContent = Cart.getItems().reduce((n, it) => n + (Number(it.quantity) || 0), 0);
+  };
+
+  // نفس منطق تحديد الحد الأدنى المستخدم وقت الإرسال (submitOrder) — مستخرج
+  // هنا عشان يتشارك مع شريط التقدّم في السلة، بدل ما يتكرر الكود مرتين
+  const resolveMinAmount = async () => {
+    let liveSettings = API.getSettings();
+    const hasMinSetting = liveSettings?.min_order_amount !== undefined
+                       || liveSettings?.minimum_order   !== undefined;
+    if (!liveSettings || !hasMinSetting) {
+      try { liveSettings = await API.initSettings(); } catch {}
+      liveSettings = liveSettings || API.getSettings() || {};
+    }
+    const minOrderVal = liveSettings?.min_order_amount ?? liveSettings?.minimum_order;
+    let minAmount = Number(minOrderVal) || CONFIG.ORDER?.MIN_AMOUNT || 0;
+
+    try {
+      const customer = API.getCustomer();
+      if (customer?.area_id) {
+        const areas = await API.getAreas();
+        const myArea = areas.find(a => a.id === customer.area_id);
+        if (myArea?.min_order_amount > 0) minAmount = myArea.min_order_amount;
+      }
+    } catch {}
+
+    return minAmount;
+  };
+
+  // شريط تقدّم الحد الأدنى — نفس الرقم الحقيقي المستخدم وقت الإرسال، بس ظاهر
+  // من قبل ما العميل يوصل لزرار "إرسال" أصلاً
+  const renderMinOrderProgress = async () => {
+    const box = document.getElementById('cart-min-progress');
+    if (!box) return;
+    if (Cart.isEmpty()) { box.classList.add('hidden'); return; }
+    try {
+      const minAmount = await resolveMinAmount();
+      const total = Cart.getTotal();
+      if (!minAmount || total >= minAmount) { box.classList.add('hidden'); return; }
+      const pct = Math.min(100, (total / minAmount) * 100);
+      const remaining = (minAmount - total).toFixed(0);
+      box.innerHTML = `
+        <div class="row"><b>كمّل ${remaining} ج.م كمان</b><span>الحد الأدنى ${minAmount.toFixed(0)} ج.م</span></div>
+        <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
+      `;
+      box.classList.remove('hidden');
+    } catch {
+      box.classList.add('hidden');
+    }
+  };
+
+  // "هتحتاج كمان؟" — نفس منطق "بترجع تطلبه" في الرئيسية (سجل طلبات حقيقي)،
+  // مستبعد منه أي صنف موجود في السلة أصلاً
+  const renderCrossSell = async () => {
+    const wrap = document.getElementById('cart-crosssell-wrap');
+    const el = document.getElementById('cart-crosssell');
+    if (!wrap || !el) return;
+    if (Cart.isEmpty()) { wrap.classList.add('hidden'); return; }
+    try {
+      const inCartIds = Cart.getItems().map(it => it.id);
+      const products = await getBuyAgainProducts(8, inCartIds);
+      if (!products.length) { wrap.classList.add('hidden'); return; }
+      el.innerHTML = products.map(p => renderProductCard(p)).join('');
+      el.querySelectorAll('.product-card').forEach(c => { c.style.width = '144px'; c.style.flexShrink = '0'; });
+      wrap.classList.remove('hidden');
+    } catch (e) {
+      console.error('[Cart] cross-sell load error:', e);
+      wrap.classList.add('hidden');
+    }
+  };
+
+  const submitOrder = async () => {
+    if (Cart.isEmpty()) { showToast('⚠️ السلة فارغة'); return; }
+
+    // ── مطابقة أخيرة مع المخزون الحيّ قبل الإرسال مباشرة ──
+    // ده الحارس الحقيقي: لو صنفين طلبوا نفس آخر قطعة في نفس الوقت تقريبًا،
+    // الأول اللي يبعت طلبه يوخدها، والتاني هنا هيتوقف قبل الإرسال ويتعرض
+    // له بالظبط إيه اللي اتغيّر، بدل ما يبعت طلب لصنف خلص من غير ما يعرف.
+    const btnPre = document.getElementById('submit-order-btn');
+    if (btnPre) { btnPre.disabled = true; btnPre.textContent = 'بنتأكد من توفر الأصناف...'; }
+    try {
+      const fresh = await API.getProducts(true);
+      const { changed, messages } = Cart.validateStock(fresh);
+      if (changed) {
+        alert('⚠️ في تغيير حصل في المخزون وإحنا بنجهّز طلبك:\n\n' + messages.join('\n') + '\n\nراجع سلتك وابعت تاني.');
+        return;
+      }
+    } catch {
+      // فشل التحقق (مشكلة شبكة) — نكمل عادي بدل ما نمنع الإرسال بالكامل،
+      // نفس فلسفة withCache: نسخة قديمة أحسن من فشل تام
+    } finally {
+      if (btnPre) { btnPre.disabled = false; btnPre.textContent = 'إرسال الطلب 📲'; }
+    }
+    if (Cart.isEmpty()) { showToast('⚠️ السلة فارغة بعد التحديث'); return; }
+
+    // ── الحد الأدنى للطلب (نفس المنطق الظاهر في شريط التقدّم فوق) ──
+    const minAmount = await resolveMinAmount();
+
+    if (minAmount > 0 && Cart.getTotal() < minAmount) {
+      showToast(`⚠️ الحد الأدنى للطلب ${minAmount} ج.م — إجماليك الحالي ${Cart.getTotal().toFixed(0)} ج.م`);
+      return;
+    }
+
+    const notes = document.getElementById('order-notes')?.value?.trim() || '';
+    const btn = document.getElementById('submit-order-btn');
+
+    btn.disabled = true;
+    btn.textContent = 'جاري الإرسال...';
+
+    try {
+      const result = await API.submitOrder(Cart.getItems(), notes);
+      // إرسال واتساب
+      API.sendWhatsApp(result.orderData, result.itemsData);
+      // مسح السلة
+      Cart.clear();
+      // عرض رسالة نجاح
+      showOrderSuccess(result.orderId, result.total, result.itemsData);
+    } catch (e) {
+      console.error('[Cart] submit error:', e);
+      // ★ لو حد من عندنا كمّل الطلب ده بالفعل (شاشة "سلال حالية" في الـERP)
+      //   من وقت آخر محاولة فشلت — منبعتوش تاني، عشان منعملش طلب مكرر
+      if (e.alreadyFulfilled) {
+        Cart.clear();
+        showToast('✅ طلبك ده اتنفّذ بالفعل من فريقنا', 5000);
+        return;
+      }
+      // ★ مهم: منمسحش السلة هنا — لو مسحناها والطلب فعلاً اتسجل في سلطان
+      //   (بس الرد ضاع بسبب مشكلة نت)، العميل هيفتكر إنه اتبعت ومش هيبعت
+      //   تاني، بينما احنا مش متأكدين. السلة بتفضل زي ما هي، وsubmitOrder
+      //   بتستخدم نفس رقم الطلب في أي محاولة تانية (يدوية أو تلقائية)
+      //   طول ما محتوى السلة نفسه، فمفيش خطر تكرار.
+      showToast('📴 فشل الإرسال — هنحاول تلقائي أول ما النت يرجع، أو دوس "إرسال" تاني');
+      armAutoRetry(notes);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'إرسال الطلب 📲';
+    }
+  };
+
+  // محاولة فعلية لإعادة إرسال طلب فشل قبل كده — بتتنادى إما فورًا (لو
+  // فتح صفحة السلة والنت موصول أصلاً) أو من armAutoRetry (لما حدث
+  // 'online' يحصل بعدين وهو لسه في نفس الجلسة)
+  const retryPendingOrder = async (notes) => {
+    if (Cart.isEmpty() || !API.hasPendingOrderDraft(Cart.getItems())) return; // اتبعتت يدوي أو اتغيّرت السلة
+    try {
+      // ★ نفس مطابقة المخزون الحي اللي بتحصل في الإرسال اليدوي (submitOrder) —
+      //   من غيرها كنا بنعيد إرسال نفس محتوى السلة القديم زي ما هو، حتى لو
+      //   المخزون خلص من وقت المحاولة الأولى الفاشلة. المطابقة بتعدّل/تشيل
+      //   من السلة لو لزم، ولو غيّرت حاجة cartSignature هيتغيّر فيبقى
+      //   submitOrder هيولّد orderId جديد بدل ما يعتبرها نفس المحاولة القديمة
+      //   (صح، لأن المحتوى فعلاً اتغيّر).
+      try {
+        const fresh = await API.getProducts(true);
+        const { changed, messages } = Cart.validateStock(fresh);
+        if (changed) {
+          if (Router.getCurrentPage() === 'cart') showToast(messages.join(' • '), 6000);
+          if (Cart.isEmpty()) { API.clearPendingOrderDraft(); return; } // كل الأصناف خلصت — مفيش حاجة نبعتها
+        }
+      } catch {
+        // فشل التحقق (مشكلة شبكة) — نفس فلسفة submitOrder اليدوي: نكمل زي ما هي بدل ما نمنع المحاولة بالكامل
+      }
+      const result = await API.submitOrder(Cart.getItems(), notes);
+      API.sendWhatsApp(result.orderData, result.itemsData);
+      Cart.clear();
+      showToast('✅ اتبعت طلبك اللي فشل قبل كده — رقم الطلب ' + result.orderId, 5000);
+      // ★ العميل ممكن يكون مسّح صفحة السلة وقت ما النت رجع — منلمسش عناصرها
+      //   إلا لو هي فعلاً الصفحة الظاهرة دلوقتي
+      if (Router.getCurrentPage() === 'cart') showOrderSuccess(result.orderId, result.total, result.itemsData);
+    } catch (e) {
+      console.error('[Cart] auto-retry failed:', e);
+      if (e.alreadyFulfilled) {
+        Cart.clear();
+        if (Router.getCurrentPage() === 'cart') showToast('✅ طلبك ده اتنفّذ بالفعل من فريقنا', 5000);
+        return; // مش بنعيد تسليح المحاولة — مفيش حاجة تانية تتبعت
+      }
+      armAutoRetry(notes); // لسه فيه مشكلة (مش بس النت) — استنى رجوع الاتصال تاني
+    }
+  };
+
+  // محاولة تلقائية صامتة أول ما الاتصال يرجع — مرة واحدة لكل فشل، وبترجع
+  // تسجّل نفسها تاني لو فشلت هي كمان (تغطية لتقطيع نت متكرر)
+  let _autoRetryArmed = false;
+  const armAutoRetry = (notes) => {
+    if (_autoRetryArmed) return;
+    _autoRetryArmed = true;
+    window.addEventListener('online', function onOnline(){
+      window.removeEventListener('online', onOnline);
+      _autoRetryArmed = false;
+      retryPendingOrder(notes);
+    }, { once: true });
+  };
+
+  const showOrderSuccess = (orderId, total, items) => {
+    const listEl   = document.getElementById('cart-list');
+    const footerEl = document.getElementById('cart-footer');
+    const emptyEl  = document.getElementById('cart-empty');
+    const minBox   = document.getElementById('cart-min-progress');
+    const crossEl  = document.getElementById('cart-crosssell-wrap');
+    emptyEl.classList.add('hidden');
+    footerEl.classList.add('hidden');
+    if (minBox) minBox.classList.add('hidden');
+    if (crossEl) crossEl.classList.add('hidden');
+
+    const itemsHtml = (items || []).map(i => `
+      <div class="summary-row">
+        <span>${i.product_name} × ${i.quantity}</span>
+        <span>${Number(i.subtotal ?? (i.price * i.quantity)).toFixed(2)}</span>
+      </div>
+    `).join('');
+
+    listEl.innerHTML = `
+      <div class="order-success">
+        <svg class="success-check" viewBox="0 0 44 44">
+          <circle cx="22" cy="22" r="20"/>
+          <path d="M13 22l6 6 12-13"/>
+        </svg>
+        <h2 class="success-title">طلبك اتأكد!</h2>
+        <p style="color:var(--gray-500);font-size:.875rem">هنتواصل معاك على واتساب لتأكيد الطلب</p>
+        <div class="success-order-num">رقم الطلب: ${orderId}</div>
+
+        ${itemsHtml ? `
+        <div class="summary-box">
+          ${itemsHtml}
+          <div class="summary-row total"><span>الإجمالي</span><span>${total.toFixed(2)} ج.م</span></div>
+        </div>` : `
+        <div style="font-size:1.1rem;font-weight:800;color:var(--green-main)">الإجمالي: ${total.toFixed(2)} ج.م</div>`}
+
+        <button class="btn btn-accent btn-full" onclick="navigateTo('orders')">
+          تابع حالة الطلب 📋
+        </button>
+        <button class="btn btn-outline btn-full" onclick="navigateTo('home')">
+          متابعة التسوق 🏠
+        </button>
+        <button class="btn btn-ghost btn-full" onclick="CartPage.shareInvoice()">
+          📤 مشاركة الفاتورة
+        </button>
+      </div>
+    `;
+  };
+
+  const shareInvoice = () => {
+    const order    = API.getLastOrder();
+    const customer = API.getCustomer();
+    if (!order) { showToast('⚠️ لا توجد بيانات للفاتورة'); return; }
+
+    const date = new Date(order.created_at).toLocaleDateString('ar-EG',
+      { year: 'numeric', month: 'short', day: 'numeric' });
+
+    let text = `🧾 *فاتورة — سلطان للمواد الغذائية*\n`;
+    text    += `━━━━━━━━━━━━━━\n`;
+    text    += `🔖 ${order.id}\n`;
+    text    += `📅 ${date}\n`;
+    if (customer?.name)      text += `👤 ${customer.name}\n`;
+    if (customer?.shop_name) text += `🏪 ${customer.shop_name}\n`;
+    if (customer?.phone)     text += `📞 ${customer.phone}\n`;
+    text    += `━━━━━━━━━━━━━━\n`;
+    (order.items || []).forEach(i => {
+      text += `• ${i.product_name}\n`;
+      text += `  ${i.quantity} × ${Number(i.price).toFixed(2)} = ${Number(i.subtotal).toFixed(2)} ج.م\n`;
+    });
+    text    += `━━━━━━━━━━━━━━\n`;
+    text    += `💰 *الإجمالي: ${Number(order.total_amount).toFixed(2)} ج.م*\n`;
+    if (order.notes) text += `📝 ${order.notes}\n`;
+
+    if (navigator.share) {
+      navigator.share({ title: 'فاتورة طلب', text }).catch(() => {});
+    } else {
+      navigator.clipboard?.writeText(text)
+        .then(() => showToast('✅ تم نسخ الفاتورة — الصقها في أي مكان'))
+        .catch(() => showToast('⚠️ تعذّر النسخ'));
+    }
+  };
+
+  const clearCart = () => {
+    if (Cart.isEmpty()) return;
+    if (!confirm('هل تريد مسح السلة بالكامل؟')) return;
+    Cart.clear();
+    showToast('🗑️ تم مسح السلة');
+  };
+
+  return { render, submitOrder, clearCart, shareInvoice };
+})();
