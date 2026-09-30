@@ -149,6 +149,7 @@ const ERPProvider = (() => {
       const { data: newId, error } = await sb.rpc('fn_sultano_register_customer', {
         p_name: data.name, p_shop_name: data.shop_name, p_phone: data.phone,
         p_area_id: data.area_id || null, p_area_name: data.area_name || null,
+        p_pin: data.pin || null,
       });
       if (error) throw error;
       // ★ لازم نرجّع الـ id الحقيقي — api.js بيفضّله على الـ id المحلي
@@ -176,8 +177,10 @@ const ERPProvider = (() => {
       return data?.[0] || null;
     },
 
-    async getCustomerByPhone(phone) {
-      const { data, error } = await sb.rpc('fn_sultano_get_customer_by_phone', { p_phone: phone });
+    // ★ دخول بالتليفون + الرقم السري (مفيش دخول برقم التليفون لوحده). بيرجّع null لأي فشل
+    //   (رقم غلط / مفيش رقم سري / الحساب مقفول مؤقتاً) من غير ما يفرّق، عشان ما نكشفش مين عميل عندنا.
+    async login(phone, pin) {
+      const { data, error } = await sb.rpc('fn_sultano_login', { p_phone: phone, p_pin: pin });
       if (error) throw error;
       return mapCustomer(data?.[0]);
     },
