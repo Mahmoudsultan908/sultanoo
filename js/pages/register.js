@@ -34,9 +34,53 @@ const RegisterPage = (() => {
     }
   };
 
+  let loginMode = false;
+
+  // تبديل بين "عميل جديد" و"عندي حساب — دخول" (الدخول بيخفي الاسم/المحل/المنطقة)
+  const setMode = (login) => {
+    loginMode = login;
+    ['reg-name', 'reg-shop', 'reg-area', 'reg-area-text'].forEach(id => {
+      const g = document.getElementById(id)?.closest('.form-group');
+      if (g) g.style.display = login ? 'none' : '';
+    });
+    const hint = document.getElementById('reg-pin-hint');
+    if (hint) hint.textContent = login
+      ? 'الرقم السري بتاخده من الشركة. لو معندكش، كلّمنا.'
+      : 'اختار رقم سري من 4 لـ 8 أرقام، هتحتاجه لما تدخل من جهاز تاني.';
+    const btn = document.getElementById('reg-submit'); if (btn) btn.textContent = login ? 'دخول →' : 'ابدأ التسوق →';
+    const tg = document.getElementById('reg-mode-toggle');
+    if (tg) tg.textContent = login ? 'عميل جديد؟ سجّل من هنا' : 'عندي حساب — تسجيل دخول';
+  };
+
   const bindForm = () => {
     document.getElementById('reg-submit')
       ?.addEventListener('click', submit);
+    document.getElementById('reg-mode-toggle')
+      ?.addEventListener('click', () => setMode(!loginMode));
+  };
+
+  const finishEntry = (customer, welcome) => {
+    document.getElementById('register-screen').classList.remove('active');
+    showToast(welcome);
+    setTimeout(() => Push.showPrompt(), 1500);
+  };
+
+  const doLogin = async (phone, pin) => {
+    const btn = document.getElementById('reg-submit');
+    btn.disabled = true; btn.textContent = '⏳ جاري الدخول...';
+    try {
+      const existing = await API.loginCustomer(phone, pin);
+      if (!existing) { showToast('⚠️ رقم التليفون أو الرقم السري غير صحيح (أو الحساب مقفول 15 دقيقة بعد محاولات كتير)'); return; }
+      try {
+        const oldOrders = await API.getOrders(existing.id);
+        if (oldOrders && oldOrders.length > 0) Storage.set(Storage.KEYS.ORDERS_HISTORY, oldOrders);
+      } catch {}
+      finishEntry(existing, `🎉 أهلاً بعودتك ${existing.name}!`);
+    } catch {
+      showToast('⚠️ تعذّر الاتصال، جرّب تاني');
+    } finally {
+      btn.disabled = false; btn.textContent = loginMode ? 'دخول →' : 'ابدأ التسوق →';
+    }
   };
 
   const submit = async () => {
@@ -54,67 +98,33 @@ const RegisterPage = (() => {
       areaName = areaText.value.trim();
     }
 
-    if (!name)  { flash('reg-name',  'أدخل اسمك الكامل'); return; }
+    const pin = (document.getElementById('reg-pin')?.value || '').trim();
     if (!phone || phone.length < 8) { flash('reg-phone', 'أدخل رقم هاتف صحيح'); return; }
-    if (!areaId && !areaName) { showToast('⚠️ اختر منطقتك'); return; }
+    if (!/^[0-9]{4,8}$/.test(pin)) { flash('reg-pin', 'الرقم السري من 4 لـ 8 أرقام'); return; }
 
-    // توحيد صيغة التليفون: 01xxxxxxx ↔ 201xxxxxxx
-    const norm = (p) => {
-      const d = p.replace(/\D/g, '');
-      return d.startsWith('0') && d.length === 11 ? '2' + d : d;
-    };
-    const phone2 = norm(phone); // النسخة الدولية
+    if (loginMode) { await doLogin(phone, pin); return; }
+
+    if (!name)  { flash('reg-name',  'أدخل اسمك الكامل'); return; }
+    if (!areaId && !areaName) { showToast('⚠️ اختر منطقتك'); return; }
 
     const btn = document.getElementById('reg-submit');
     btn.disabled    = true;
-    btn.textContent = '⏳ جاري التحقق...';
-
-    try {
-      // ── هل رقم التليفون مسجّل من قبل؟ (بصيغتين) ──
-      const existing = await API.getCustomerByPhone(phone)
-                    || await API.getCustomerByPhone(phone2);
-      if (existing) {
-        Storage.set(Storage.KEYS.CUSTOMER,   existing);
-        Storage.set(Storage.KEYS.REGISTERED, true);
-
-        // ── استرجاع الطلبات القديمة ──
-        try {
-          const oldOrders = await API.getOrders(existing.id);
-          if (oldOrders && oldOrders.length > 0) {
-            Storage.set(Storage.KEYS.ORDERS_HISTORY, oldOrders);
-          }
-        } catch {}
-
-        // ── استرجاع المفضلة ──
-        try {
-          if (existing.favorites) {
-            const favIds = String(existing.favorites).split(',').map(s => s.trim()).filter(Boolean);
-            favIds.forEach(id => Favorites.restoreId(id));
-          }
-        } catch {}
-
-        document.getElementById('register-screen').classList.remove('active');
-        showToast(`🎉 أهلاً بعودتك ${existing.name}!`);
-        btn.disabled    = false;
-        btn.textContent = 'ابدأ التسوق →';
-        setTimeout(() => Push.showPrompt(), 1500);
-        return;
-      }
-    } catch { /* فشل الاتصال — كمّل التسجيل الجديد */ }
-
-    // ── تسجيل جديد ──
     btn.textContent = '⏳ جاري التسجيل...';
     try {
-      await API.registerCustomer({ name, shop_name: shop, phone, area_id: areaId, area_name: areaName });
+      await API.registerCustomer({ name, shop_name: shop, phone, area_id: areaId, area_name: areaName, pin });
     } catch (err) {
+      if (String(err?.message || err).includes('phone_exists')) {
+        showToast('ℹ️ الرقم ده مسجّل عندنا، دخّل الرقم السري من "عندي حساب"');
+        setMode(true);
+        btn.disabled = false;
+        return;
+      }
       console.warn('[Register] save failed (non-critical):', err);
     }
 
-    document.getElementById('register-screen').classList.remove('active');
-    showToast(`🎉 أهلاً ${name}! يمكنك التسوق الآن`);
+    finishEntry(null, `🎉 أهلاً ${name}! يمكنك التسوق الآن`);
     btn.disabled    = false;
     btn.textContent = 'ابدأ التسوق →';
-    setTimeout(() => Push.showPrompt(), 1500);
   };
 
   const flash = (id, msg) => {

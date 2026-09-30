@@ -214,54 +214,22 @@ const App = {
       return;
     }
 
-    // 5a. ★ توفيق مهم لمرة واحدة: أي عميل اتسجّل قبل التحويل لـ ERP (زمن
-    //     الشيت) عنده id محلي وهمي (زي CUS-XXXX-YYYY) مش uuid حقيقي في
-    //     سلطان ERP. بما إن isRegistered() already true، التسجيل ما بيتكررش
-    //     تاني، فيفضل عالق بالـ id الوهمي ده — وده بيكسر كل حاجة محتاجة
-    //     الـ id (تحميل المنتجات بالسعر الصح، إرسال الطلب...) لأن الـ RPC
-    //     بيتوقع uuid حقيقي. الإصلاح: لو الـ id مش شكل uuid، اربطه فورًا
-    //     بنفس رقم تليفونه على عميل سلطان ERP حقيقي (أو سجّله لو مالوش
-    //     نظير) — من غير ما المستخدم يحس أو يتطلب منه يعيد أي بيانات.
+    // 5a. عميل قديم من زمن الشيت عنده id محلي وهمي (مش uuid): مبقاش ينفع نربطه برقم التليفون
+    //     لوحده (كان تسريب: أي حد يعرف الرقم يبقى العميل ده). بنمسح علامة "مسجّل" فيدخل
+    //     بشاشة الدخول (التليفون + الرقم السري اللي بتديهوله الشركة).
     const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (API.isRegistered()) {
       const c = API.getCustomer();
-      const hasRealId = c?.id && UUID_RE.test(c.id);
-      if (c && !hasRealId && c.phone) {
-        try {
-          let real = await API.getCustomerByPhone(c.phone);
-          if (!real) {
-            // ★ c.area_id لو موجود ده id منطقة من عصر الشيت — مش uuid حقيقي
-            //   في customer_regions، فبعته زي ما هو كان بيكسر الـ RPC بصمت
-            //   (خطأ تحويل نوع) قبل حتى ما يوصل لمنطق التسجيل — تسيبه null
-            //   أسلم من غير ما يوقف التسجيل، والأدمن يظبط المنطقة بعدين
-            const safeAreaId = c.area_id && UUID_RE.test(c.area_id) ? c.area_id : null;
-            real = await API.registerCustomer({
-              name: c.name, shop_name: c.shop_name, phone: c.phone,
-              area_id: safeAreaId, area_name: c.area_name,
-            });
-          } else {
-            Storage.set(Storage.KEYS.CUSTOMER, { ...c, ...real });
-          }
-        } catch (e) {
-          console.warn('[Migrate] فشل ربط العميل بـ id حقيقي، هيتطلب تسجيل من جديد:', e);
-          // لو الإصلاح الصامت فشل لأي سبب تاني، امسح علامة "مسجّل" بدل ما
-          //   يفضل عالق للأبد على id مكسور — المرة الجاية يفتح التطبيق
-          //   هيشوف شاشة التسجيل تاني (فورم فاضي، هيكتب بياناته تاني).
-          //   في زرار "إعادة التسجيل" يدوي كمان دلوقتي من صفحة البروفايل.
-          Storage.remove(Storage.KEYS.REGISTERED);
-        }
-      }
+      if (c && !(c.id && UUID_RE.test(c.id))) Storage.remove(Storage.KEYS.REGISTERED);
     }
 
-    // 5b. تحديث بيانات العميل صامتاً (VIP + customer_type)
+    // 5b. تحديث اسم العميل صامتاً بالـ id (مش بالتليفون)
     if (API.isRegistered()) {
       const c = API.getCustomer();
-      if (c?.phone) {
-        API.getCustomerByPhone(c.phone).then(fresh => {
-          if (!fresh) return;
-          // حدّث فقط لو في تغيير حقيقي
-          if (fresh.customer_type !== c.customer_type || fresh.name !== c.name) {
-            Storage.set(Storage.KEYS.CUSTOMER, { ...c, ...fresh });
+      if (c?.id) {
+        API.getCustomerAccount(c.id).then(fresh => {
+          if (fresh?.name && fresh.name !== c.name) {
+            Storage.set(Storage.KEYS.CUSTOMER, { ...c, name: fresh.name });
           }
         }).catch(() => {});
       }

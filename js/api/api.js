@@ -298,6 +298,7 @@ const API = (() => {
       phone:        data.phone,
       area_id:      data.area_id,
       area_name:    data.area_name,
+      pin:          data.pin,
       registered_at: new Date().toISOString(),
       erp_customer_id: '',
     };
@@ -309,6 +310,7 @@ const API = (() => {
     // فالسلوك القديم فاضل زي ما هو من غيره.
     const providerResult = await getProvider().registerCustomer(customerData);
     if (providerResult?.id) customerData.id = providerResult.id;
+    delete customerData.pin;   // الرقم السري ما بيتخزنش على التليفون
 
     Storage.set(Storage.KEYS.CUSTOMER, customerData);
     Storage.set(Storage.KEYS.REGISTERED, true);
@@ -338,9 +340,15 @@ const API = (() => {
     } catch {}
   };
 
-  const getCustomerByPhone = async (phone) => {
-    try { return await getProvider().getCustomerByPhone(phone); }
-    catch { return null; }
+  // دخول عميل موجود: null = بيانات غلط أو مقفول مؤقتاً؛ بيرمي خطأ بس لو فشل الاتصال
+  const loginCustomer = async (phone, pin) => {
+    const p = getProvider();
+    if (typeof p.login !== 'function') return null;
+    const customer = await p.login(phone, pin);
+    if (!customer) return null;
+    Storage.set(Storage.KEYS.CUSTOMER, customer);
+    Storage.set(Storage.KEYS.REGISTERED, true);
+    return customer;
   };
 
   // ─── Banners ───────────────────────────────────────────────────
@@ -446,7 +454,7 @@ const API = (() => {
     submitOrder, hasPendingOrderDraft, getPendingOrderDraftNotes, clearPendingOrderDraft, getOrdersHistory, getLastOrder, getOrders, getCustomerAccount,
     getLoyaltySettings, getCustomerLoyalty,
     registerCustomer, getCustomer, isRegistered, updateCustomer,
-    getCustomerByPhone, updateCustomerFavorites,
+    loginCustomer, updateCustomerFavorites,
     savePushSubscription, removePushSubscription,
     syncCart, clearCart,
     sendWhatsApp,
