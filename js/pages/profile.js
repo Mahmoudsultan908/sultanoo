@@ -211,7 +211,39 @@ const ProfilePage = (() => {
           <div class="profile-row"><span class="row-label">رقم واتساب</span><span class="row-value" dir="ltr">${wa}</span></div>
           <div class="profile-row"><span class="row-label">اسم التطبيق</span><span class="row-value">${CONFIG.APP?.NAME || s.store_name || 'سلطان للمواد الغذائية'}</span></div>
         </div>
+      </div>
+      <div class="profile-card" style="margin-top:1rem">
+        <div class="profile-card-header"><span>🔑 تغيير الرقم السري</span></div>
+        <div class="profile-rows" style="padding:0 1rem 1rem">
+          <div style="font-size:12.5px;color:var(--text-muted,#667);margin:8px 0">اكتب الرقم السري الجديد (من 4 لـ8 أرقام). هتدخل بيه من الدخلة الجاية، ولو كنت داخل من تليفون تاني هيتطلب منك تدخل تاني.</div>
+          <input type="password" inputmode="numeric" maxlength="8" id="pin-new" placeholder="الرقم السري الجديد" autocomplete="new-password"
+            style="width:100%;padding:11px;border:1px solid #ccd;border-radius:10px;margin-bottom:8px;font-size:15px;text-align:center;letter-spacing:4px">
+          <input type="password" inputmode="numeric" maxlength="8" id="pin-new2" placeholder="أعد كتابته للتأكيد" autocomplete="new-password"
+            style="width:100%;padding:11px;border:1px solid #ccd;border-radius:10px;margin-bottom:10px;font-size:15px;text-align:center;letter-spacing:4px">
+          <button class="btn btn-primary" id="pin-change-btn" style="width:100%" onclick="ProfilePage.changePin()">💾 حفظ الرقم السري</button>
+        </div>
       </div>`;
+  };
+
+  // تغيير الرقم السري: العميل داخل بحسابه فعلاً (تذكرة دخول شغالة)، فمش بنطلب الرقم القديم
+  const changePin = async () => {
+    const a = (document.getElementById('pin-new')?.value || '').trim();
+    const b = (document.getElementById('pin-new2')?.value || '').trim();
+    if (!/^[0-9]{4,8}$/.test(a)) { showToast('الرقم السري لازم يكون من 4 إلى 8 أرقام'); return; }
+    if (/^(\d)\1+$/.test(a))     { showToast('اختار رقم سري مش كله نفس الرقم'); return; }
+    if (a !== b)                 { showToast('الرقمين مش متطابقين'); return; }
+    const btn = document.getElementById('pin-change-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ جاري الحفظ...'; }
+    try {
+      await API.changePin(a);
+      document.getElementById('pin-new').value = '';
+      document.getElementById('pin-new2').value = '';
+      showToast('✅ اتغيّر الرقم السري');
+    } catch (e) {
+      showToast('تعذّر تغيير الرقم السري، حاول تاني');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '💾 حفظ الرقم السري'; }
+    }
   };
 
   const refreshSettings = async () => {
@@ -248,5 +280,5 @@ const ProfilePage = (() => {
     location.reload();
   };
 
-  return { render, openEdit, closeEdit, saveEdit, refreshSettings, resetRegistration, refreshData, toggleNotifications };
+  return { render, openEdit, closeEdit, saveEdit, refreshSettings, resetRegistration, refreshData, toggleNotifications, changePin };
 })();
