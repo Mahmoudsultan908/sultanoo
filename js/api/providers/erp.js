@@ -210,6 +210,11 @@ const ERPProvider = (() => {
       return mapCustomer(data?.[0]);
     },
 
+    // تغيير الرقم السري (بالتذكرة الحالية). السيرفر بيلغي تذاكر الأجهزة التانية ويسيب الحالية.
+    async changePin(newPin) {
+      await rpcT('fn_sultano_change_pin_t', { p_token: getToken(), p_new_pin: newPin });
+    },
+
     // تسجيل خروج (بيلغي التذكرة على السيرفر)؛ الفشل مش مهم
     async logout() {
       const t = getToken();

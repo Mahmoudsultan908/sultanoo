@@ -332,6 +332,12 @@ const API = (() => {
 
   // تسجيل خروج من السيرفر (بيلغي التذكرة) — الفشل مش مهم
   const logoutServer = () => { try { const p = getProvider(); return typeof p.logout === "function" ? p.logout() : Promise.resolve(); } catch { return Promise.resolve(); } };
+  // تغيير الرقم السري للعميل الداخل (بالتذكرة)
+  const changePin = (pin) => {
+    const p = getProvider();
+    if (typeof p.changePin !== 'function') return Promise.reject(new Error('غير مدعوم'));
+    return p.changePin(pin);
+  };
   const savePushSubscription = (sub) => getProvider().savePushSubscription(sub);
   const removePushSubscription = (endpoint) => getProvider().removePushSubscription(endpoint);
   const syncCart = (customerId, items) => getProvider().syncCart(customerId, items);
@@ -457,7 +463,7 @@ const API = (() => {
     submitOrder, hasPendingOrderDraft, getPendingOrderDraftNotes, clearPendingOrderDraft, getOrdersHistory, getLastOrder, getOrders, getCustomerAccount,
     getLoyaltySettings, getCustomerLoyalty,
     registerCustomer, getCustomer, isRegistered, updateCustomer,
-    loginCustomer, logoutServer, updateCustomerFavorites,
+    loginCustomer, logoutServer, changePin, updateCustomerFavorites,
     savePushSubscription, removePushSubscription,
     syncCart, clearCart,
     sendWhatsApp,
