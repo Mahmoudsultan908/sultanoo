@@ -9,9 +9,34 @@
  */
 
 const ERPProvider = (() => {
-  const getCustomerId = () => {
+  // ★ الهوية دلوقتي بتذكرة دخول (session_token) بتتولّد وقت الدخول بالتليفون + الرقم السري،
+  //   مش برقم العميل (uuid). السيرفر بيعرف العميل من التذكرة، فمعرفة رقم عميل لوحدها ما بتفيدش.
+  const getToken = () => {
     const c = Storage.get(Storage.KEYS.CUSTOMER);
-    return c?.id || null;
+    return c?.session_token || null;
+  };
+
+  // التذكرة خلصت أو اتلغت (مثلاً الشركة غيّرت الرقم السري، أو عميل قديم من قبل التذاكر):
+  // نمسح التسجيل المحلي ونرجّع العميل لشاشة الدخول
+  const onSessionExpired = () => {
+    try {
+      Storage.remove(Storage.KEYS.CUSTOMER);
+      Storage.remove(Storage.KEYS.REGISTERED);
+    } catch { /* مش مهم */ }
+    if (!window.__sessionResetting) {
+      window.__sessionResetting = true;
+      setTimeout(() => location.reload(), 300);
+    }
+  };
+
+  // بينادي دالة السيرفر ويتصرف مع خطأ "invalid session"
+  const rpcT = async (name, params) => {
+    const { data, error } = await sb.rpc(name, params);
+    if (error) {
+      if (/invalid session/i.test(error.message || '')) onSessionExpired();
+      throw error;
+    }
+    return data;
   };
 
   const mapProduct = (row) => ({
@@ -67,6 +92,7 @@ const ERPProvider = (() => {
     favorites:     '',
     registered_at: row.created_at || '',
     is_active:     true,
+    session_token: row.session_token || '',
   }) : null;
 
   const mapOrder = (row) => ({
@@ -84,8 +110,7 @@ const ERPProvider = (() => {
 
   return {
     async getProducts() {
-      const { data, error } = await sb.rpc('fn_sultano_get_priced_products', { p_customer_id: getCustomerId() });
-      if (error) throw error;
+      const data = await rpcT('fn_sultano_get_priced_products_t', { p_token: getToken() });
       return (data || []).map(mapProduct);
     },
 
@@ -110,23 +135,21 @@ const ERPProvider = (() => {
     },
 
     async submitOrder(order, items) {
-      const { error } = await sb.rpc('fn_sultano_submit_order', {
-        p_customer_id: order.customer_id,
+      await rpcT('fn_sultano_submit_order_t', {
+        p_token: getToken(),
         p_items: (items || []).map(it => ({ product_id: it.product_id, qty: it.quantity })),
         p_notes: order.notes || null,
         p_client_order_id: order.id,
       });
-      if (error) throw error;
     },
 
     // هل موظف كمّل الطلب ده من عنده في سلطان ERP من وقت آخر محاولة إرسال
     // فشلت؟ — بيمنع إعادة إرسال (يدوي أو أوتوماتيك) لطلب اتنفّذ بالفعل
     async checkCartFulfilled(customerId, sinceIso) {
-      const { data, error } = await sb.rpc('fn_sultano_check_cart_fulfilled', {
-        p_customer_id: customerId,
+      const data = await rpcT('fn_sultano_check_cart_fulfilled_t', {
+        p_token: getToken(),
         p_since: sinceIso,
       });
-      if (error) throw error;
       return !!data;
     },
 
@@ -134,15 +157,13 @@ const ERPProvider = (() => {
     // الإرسال، الأدمن يشوف بالظبط اللي في سلته ويكمّل الطلبية من عنده.
     // فشل الاتصال هنا مش لازم يبوّظ تجربة العميل، فبيتبلع بهدوء من اللي بينادي
     async syncCart(customerId, items) {
-      const { error } = await sb.rpc('fn_sultano_sync_cart', {
-        p_customer_id: customerId,
+      await rpcT('fn_sultano_sync_cart_t', {
+        p_token: getToken(),
         p_items: (items || []).map(it => ({ product_id: it.id, name: it.name_ar, unit: it.unit, price: it.price, qty: it.quantity })),
       });
-      if (error) throw error;
     },
     async clearCart(customerId) {
-      const { error } = await sb.rpc('fn_sultano_clear_cart', { p_customer_id: customerId });
-      if (error) throw error;
+      await rpcT('fn_sultano_clear_cart_t', { p_token: getToken() });
     },
 
     async registerCustomer(data) {
@@ -154,35 +175,46 @@ const ERPProvider = (() => {
       if (error) throw error;
       // ★ لازم نرجّع الـ id الحقيقي — api.js بيفضّله على الـ id المحلي
       //   المؤقت لو موجود (راجع registerCustomer في api.js)
-      return { id: newId };
+      // والعميل الجديد اختار رقمه السري وقت التسجيل، فبنسجّله دخول فوراً عشان ياخد تذكرته
+      let session_token = '';
+      if (data.pin) {
+        try {
+          const { data: lg } = await sb.rpc('fn_sultano_login_v2', { p_phone: data.phone, p_pin: data.pin });
+          session_token = lg?.[0]?.session_token || '';
+        } catch { /* لو فشل، العميل يدخل بالتليفون والرقم السري من شاشة الدخول */ }
+      }
+      return { id: newId, session_token };
     },
 
     async getOrders(customerId) {
-      const { data, error } = await sb.rpc('fn_sultano_get_orders', { p_customer_id: customerId });
-      if (error) throw error;
+      const data = await rpcT('fn_sultano_get_orders_t', { p_token: getToken() });
       return (data || []).map(mapOrder);
     },
 
     async getOrderStatus(orderId) {
-      const { data, error } = await sb.rpc('fn_sultano_get_order_status', {
-        p_customer_id: getCustomerId(), p_order_id: orderId,
-      });
-      if (error) throw error;
+      const data = await rpcT('fn_sultano_get_order_status_t', { p_token: getToken(), p_order_id: orderId });
       return data?.[0] || null;
     },
 
     async getCustomerAccount(id) {
-      const { data, error } = await sb.rpc('fn_sultano_get_customer_account', { p_customer_id: id });
-      if (error) throw error;
+      const data = await rpcT('fn_sultano_get_customer_account_t', { p_token: getToken() });
       return data?.[0] || null;
     },
 
     // ★ دخول بالتليفون + الرقم السري (مفيش دخول برقم التليفون لوحده). بيرجّع null لأي فشل
     //   (رقم غلط / مفيش رقم سري / الحساب مقفول مؤقتاً) من غير ما يفرّق، عشان ما نكشفش مين عميل عندنا.
+    //   لو نجح، بيرجّع كمان التذكرة (session_token) اللي بتتبعت مع كل طلب بعد كده.
     async login(phone, pin) {
-      const { data, error } = await sb.rpc('fn_sultano_login', { p_phone: phone, p_pin: pin });
+      const { data, error } = await sb.rpc('fn_sultano_login_v2', { p_phone: phone, p_pin: pin });
       if (error) throw error;
       return mapCustomer(data?.[0]);
+    },
+
+    // تسجيل خروج (بيلغي التذكرة على السيرفر)؛ الفشل مش مهم
+    async logout() {
+      const t = getToken();
+      if (!t) return;
+      try { await sb.rpc('fn_sultano_logout_t', { p_token: t }); } catch { /* مش مهم */ }
     },
 
     async updateCustomer(customerData) {
@@ -190,23 +222,21 @@ const ERPProvider = (() => {
       // بالظبط تعديلات المندوبين — عن طريق RPC مخصص (مفيش auth.uid() هنا
       // عشان سلطانو مستخدم مجهول، فـ RLS العادية على الجدول مش هتسمح بـ
       // insert مباشر)
-      const { error } = await sb.rpc('fn_sultano_request_customer_update', {
-        p_customer_id: customerData.id,
+      await rpcT('fn_sultano_request_customer_update_t', {
+        p_token: getToken(),
         p_name: customerData.name,
         p_phone: customerData.phone,
         p_address: [customerData.shop_name, customerData.area_name].filter(Boolean).join(' / '),
       });
-      if (error) throw error;
     },
 
     async updateCustomerFavorites() { /* مفيش تخزين مفضّلة في سلطان ERP حالياً */ },
 
     async savePushSubscription(sub) {
-      const { error } = await sb.rpc('fn_sultano_save_push_subscription', {
-        p_customer_id: sub.customer_id, p_endpoint: sub.endpoint,
+      await rpcT('fn_sultano_save_push_subscription_t', {
+        p_token: getToken(), p_endpoint: sub.endpoint,
         p_p256dh: sub.p256dh, p_auth: sub.auth, p_user_agent: sub.user_agent || null,
       });
-      if (error) throw error;
     },
 
     async removePushSubscription(endpoint) {
@@ -246,8 +276,7 @@ const ERPProvider = (() => {
     },
 
     async getCustomerLoyalty(customerId) {
-      const { data, error } = await sb.rpc('fn_sultano_get_customer_loyalty', { p_customer_id: customerId });
-      if (error) throw error;
+      const data = await rpcT('fn_sultano_get_customer_loyalty_t', { p_token: getToken() });
       return Number(data?.[0]?.points_balance) || 0;
     },
   };

@@ -310,6 +310,7 @@ const API = (() => {
     // فالسلوك القديم فاضل زي ما هو من غيره.
     const providerResult = await getProvider().registerCustomer(customerData);
     if (providerResult?.id) customerData.id = providerResult.id;
+    if (providerResult?.session_token) customerData.session_token = providerResult.session_token;  // تذكرة الدخول
     delete customerData.pin;   // الرقم السري ما بيتخزنش على التليفون
 
     Storage.set(Storage.KEYS.CUSTOMER, customerData);
@@ -329,6 +330,8 @@ const API = (() => {
     return updated;
   };
 
+  // تسجيل خروج من السيرفر (بيلغي التذكرة) — الفشل مش مهم
+  const logoutServer = () => { try { const p = getProvider(); return typeof p.logout === "function" ? p.logout() : Promise.resolve(); } catch { return Promise.resolve(); } };
   const savePushSubscription = (sub) => getProvider().savePushSubscription(sub);
   const removePushSubscription = (endpoint) => getProvider().removePushSubscription(endpoint);
   const syncCart = (customerId, items) => getProvider().syncCart(customerId, items);
@@ -454,7 +457,7 @@ const API = (() => {
     submitOrder, hasPendingOrderDraft, getPendingOrderDraftNotes, clearPendingOrderDraft, getOrdersHistory, getLastOrder, getOrders, getCustomerAccount,
     getLoyaltySettings, getCustomerLoyalty,
     registerCustomer, getCustomer, isRegistered, updateCustomer,
-    loginCustomer, updateCustomerFavorites,
+    loginCustomer, logoutServer, updateCustomerFavorites,
     savePushSubscription, removePushSubscription,
     syncCart, clearCart,
     sendWhatsApp,

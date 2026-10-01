@@ -233,6 +233,7 @@ const ProfilePage = (() => {
   // يصلحه بنفسه)
   const resetRegistration = () => {
     if (!confirm('هيتم مسح تسجيلك الحالي وترجع لشاشة التسجيل من الأول. متابعة؟')) return;
+    if (typeof API !== 'undefined' && API.logoutServer) API.logoutServer();   // يلغي التذكرة على السيرفر قبل المسح المحلي
     Storage.remove(Storage.KEYS.CUSTOMER);
     Storage.remove(Storage.KEYS.REGISTERED);
     location.reload();
