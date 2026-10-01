@@ -11,7 +11,7 @@
 //   مش هتاخد التحديث خالص. كان فيه متغيّر CACHE_NAME تاني هنا اسمه شبه
 //   بيوهم إنه هو اللي بيتحكم لكنه مش مستخدم في أي مكان — اتشال عشان
 //   ميتلخبطش تاني وحد يبدّله هو بدل STATIC_CACHE زي ما حصل قبل كده.
-const STATIC_CACHE  = 'sultan-static-v3.5.0';
+const STATIC_CACHE  = 'sultan-static-v3.6.0';
 const DATA_CACHE    = 'sultan-data-v3.3.0';
 
 // الملفات التي تُحفظ دائماً offline
