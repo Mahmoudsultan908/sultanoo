@@ -9,8 +9,10 @@ const RegisterPage = (() => {
     const screen = document.getElementById('register-screen');
     if (!screen) return;
     screen.classList.add('active');
-    await loadAreas();
     bindForm();
+    setMode(true);   // أول ما التطبيق يفتح: صفحة الدخول (أغلب العملاء عندهم حساب)، وتحتها زرار "عميل جديد"
+    await loadAreas();
+    setMode(loginMode);   // لو القايمة اتبدّلت بحقل نصي، نعيد إخفاء/إظهار الحقول حسب الوضع الحالي
   };
 
   const loadAreas = async () => {
@@ -49,7 +51,15 @@ const RegisterPage = (() => {
       : 'اختار رقم سري من 4 لـ 8 أرقام، هتحتاجه لما تدخل من جهاز تاني.';
     const btn = document.getElementById('reg-submit'); if (btn) btn.textContent = login ? 'دخول →' : 'ابدأ التسوق →';
     const tg = document.getElementById('reg-mode-toggle');
-    if (tg) tg.textContent = login ? 'عميل جديد؟ سجّل من هنا' : 'عندي حساب — تسجيل دخول';
+    if (tg) {
+      tg.textContent = login ? '🆕 عميل جديد؟ سجّل حساب وابدأ التسوق' : 'عندي حساب — تسجيل دخول';
+      tg.classList.toggle('btn-outline', login);   // الزرار الأساسي تحت الدخول واضح، وتحت التسجيل خفيف
+      tg.classList.toggle('btn-ghost', !login);
+      tg.style.fontWeight = login ? '700' : '';
+    }
+    const title = document.getElementById('reg-title'), sub = document.getElementById('reg-sub');
+    if (title) title.textContent = login ? 'أهلاً بيك!' : 'مرحباً بك!';
+    if (sub) sub.textContent = login ? 'ادخل برقم تليفونك والرقم السري' : 'أدخل بياناتك لبدء التسوق';
   };
 
   const bindForm = () => {
