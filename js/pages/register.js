@@ -129,7 +129,18 @@ const RegisterPage = (() => {
         btn.disabled = false;
         return;
       }
-      console.warn('[Register] save failed (non-critical):', err);
+      if (String(err?.message || err).includes('too_many_attempts')) {
+        showToast('⚠️ محاولات تسجيل كتير من نفس الجهاز — جرّب بعد ساعة أو كلّم الشركة');
+        btn.disabled = false;
+        btn.textContent = 'ابدأ التسوق →';
+        return;
+      }
+      // الكتالوج بقى للعملاء المسجّلين بس، فلو التسجيل نفسه فشل مفيش فايدة ندخّله — يجرّب تاني
+      console.warn('[Register] save failed:', err);
+      showToast('⚠️ تعذّر التسجيل دلوقتي — اتأكد من الإنترنت وجرّب تاني');
+      btn.disabled = false;
+      btn.textContent = 'ابدأ التسوق →';
+      return;
     }
 
     finishEntry(null, `🎉 أهلاً ${name}! يمكنك التسوق الآن`);
