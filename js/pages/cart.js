@@ -139,6 +139,30 @@ const CartPage = (() => {
     }
   };
 
+  // رفض من السيرفر لسبب عمل (حد أدنى / مخزون / كمية) — مش مشكلة نت، فمفيش داعي نعيد المحاولة تلقائي.
+  // بيرجّع رسالة للعميل أو null لو الخطأ مش من النوع ده.
+  const orderRejectionMessage = (e) => {
+    const m = String(e?.message || e || '').match(/(min_order_not_met|min_qty_not_met|max_qty_exceeded|insufficient_stock):?\s*(.*)$/);
+    if (!m) return null;
+    const detail = (m[2] || '').trim();
+    switch (m[1]) {
+      case 'min_order_not_met': return `⚠️ الحد الأدنى للطلب ${Number(detail) || ''} ج.م — كمّل سلتك`;
+      case 'insufficient_stock': return `⚠️ "${detail}" مش متاح بالكمية دي دلوقتي — راجع سلتك`;
+      case 'max_qty_exceeded': return `⚠️ "${detail}" الكمية عدّت الحد الأقصى المسموح — قلّلها`;
+      default: return `⚠️ "${detail}" أقل من الحد الأدنى للكمية — زوّدها`;
+    }
+  };
+  // بعد الرفض: امسح مسودة الإرسال القديمة وطابق السلة مع المخزون الحي عشان العميل يشوف الكمية الصح
+  const handleOrderRejection = async (msg) => {
+    API.clearPendingOrderDraft();
+    showToast(msg, 7000);
+    try {
+      const fresh = await API.getProducts(true);
+      const { changed, messages } = Cart.validateStock(fresh);
+      if (changed) showToast(messages.join(' • '), 7000);
+    } catch { /* مش مهم */ }
+  };
+
   const submitOrder = async () => {
     if (Cart.isEmpty()) { showToast('⚠️ السلة فارغة'); return; }
 
@@ -194,6 +218,8 @@ const CartPage = (() => {
         showToast('✅ طلبك ده اتنفّذ بالفعل من فريقنا', 5000);
         return;
       }
+      const rejection = orderRejectionMessage(e);
+      if (rejection) { await handleOrderRejection(rejection); return; }
       // ★ مهم: منمسحش السلة هنا — لو مسحناها والطلب فعلاً اتسجل في سلطان
       //   (بس الرد ضاع بسبب مشكلة نت)، العميل هيفتكر إنه اتبعت ومش هيبعت
       //   تاني، بينما احنا مش متأكدين. السلة بتفضل زي ما هي، وsubmitOrder
@@ -243,6 +269,8 @@ const CartPage = (() => {
         if (Router.getCurrentPage() === 'cart') showToast('✅ طلبك ده اتنفّذ بالفعل من فريقنا', 5000);
         return; // مش بنعيد تسليح المحاولة — مفيش حاجة تانية تتبعت
       }
+      const rejection = orderRejectionMessage(e);
+      if (rejection) { await handleOrderRejection(rejection); return; }   // رفض لسبب عمل — مفيش إعادة محاولة
       armAutoRetry(notes); // لسه فيه مشكلة (مش بس النت) — استنى رجوع الاتصال تاني
     }
   };
