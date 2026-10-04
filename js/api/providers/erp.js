@@ -31,9 +31,13 @@ const ERPProvider = (() => {
 
   // بينادي دالة السيرفر ويتصرف مع خطأ "invalid session"
   const rpcT = async (name, params) => {
+    const hadToken = !!getToken();
     const { data, error } = await sb.rpc(name, params);
     if (error) {
-      if (/invalid session/i.test(error.message || '')) onSessionExpired();
+      // "invalid session" معناها إن التذكرة اللي عند العميل خلصت — بس لو كان فعلاً معاه تذكرة.
+      // الزائر من غير تذكرة (لسه ما سجّلش دخول) السيرفر بيرفض طلبه برضه، ولو عملنا reload
+      // هنا كل مرة هيدخل في دايرة تحميل لا تنتهي (حصل ده فعلاً).
+      if (hadToken && /invalid session/i.test(error.message || '')) onSessionExpired();
       throw error;
     }
     return data;
