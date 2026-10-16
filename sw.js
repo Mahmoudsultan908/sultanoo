@@ -1,177 +1,66 @@
-/**
- * Sultan Foods — Service Worker v2.0.0
- * ======================================
- * Cache-first strategy للأصول الثابتة
- * Network-first للبيانات
- */
+// Sultanoo — the new app's service worker (17/10/2026). It replaces the old app's worker at the same address:
+//  * removes every old cache (the old worker served the old page from its cache), then reloads open windows once so a
+//    customer who had the old app open lands in the new one;
+//  * pages: network first, the saved copy (or offline.html) when there is no internet;
+//  * the app's files (hashed names under assets/): saved once, served from the device;
+//  * the server (another address) always goes to the network — prices, stock and orders are never served from a copy;
+//  * phone notifications: shown the same way as before (same payload: title, body, icon, image, url).
+const CACHE = 'sultanoo-new-v1';
+const SHELL = ['./', './index.html', './offline.html', './manifest.json'];
 
-// ★ STATIC_CACHE هو المتحكم الحقيقي في إعادة التحميل (مستخدم فعليًا في
-//   install/activate) — لازم يتغيّر مرة واحدة مع كل ديبلوي فيه تعديل على
-//   أي ملف فى STATIC_ASSETS، وإلا التطبيقات المثبتة فعلاً عند العملاء
-//   مش هتاخد التحديث خالص. كان فيه متغيّر CACHE_NAME تاني هنا اسمه شبه
-//   بيوهم إنه هو اللي بيتحكم لكنه مش مستخدم في أي مكان — اتشال عشان
-//   ميتلخبطش تاني وحد يبدّله هو بدل STATIC_CACHE زي ما حصل قبل كده.
-const STATIC_CACHE  = 'sultan-static-v3.7.4';
-const DATA_CACHE    = 'sultan-data-v3.3.0';
-
-// الملفات التي تُحفظ دائماً offline
-const STATIC_ASSETS = [
-  './',
-  './index.html',
-  './offline.html',
-  './manifest.json',
-  './css/base.css',
-  './css/layout.css',
-  './css/components.css',
-  './css/pages.css',
-  './config/config.js',
-  './js/core/events.js',
-  './js/core/state.js',
-  './js/core/router.js',
-  './js/vendor/supabase.js',
-  './js/layers/storage.js',
-  './js/layers/voice-search.js',
-  './js/layers/cart.js',
-  './js/layers/favorites.js',
-  './js/layers/push.js',
-  './js/api/providers/sheets.js',
-  './js/api/providers/supabase-client.js',
-  './js/api/providers/erp.js',
-  './js/api/api.js',
-  './js/pages/register.js',
-  './js/pages/home.js',
-  './js/pages/category.js',
-  './js/pages/product.js',
-  './js/pages/search.js',
-  './js/pages/cart.js',
-  './js/pages/favorites.js',
-  './js/pages/orders.js',
-  './js/pages/profile.js',
-  './js/app.js',
-  './assets/logo.png',
-  './assets/icons/icon-192.png',
-  './assets/icons/icon-512.png',
-  'https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=Tajawal:wght@400;500;700;800&display=swap',
-];
-
-// ─── Install ──────────────────────────────────────────────────────
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(STATIC_CACHE)
-      .then(cache => cache.addAll(STATIC_ASSETS))
-      .then(() => self.skipWaiting())
-      .catch(err => console.warn('[SW] install cache failed:', err))
-  );
+  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).catch(() => undefined).then(() => self.skipWaiting()));
 });
 
-// ─── Activate ─────────────────────────────────────────────────────
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(
-        keys
-          .filter(k => k !== STATIC_CACHE && k !== DATA_CACHE)
-          .map(k => caches.delete(k))
-      )
-    ).then(() => self.clients.claim())
-  );
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    const old = keys.filter((k) => k !== CACHE);
+    await Promise.all(old.map((k) => caches.delete(k)));
+    await self.clients.claim();
+    if (old.some((k) => k.startsWith('sultan-'))) {   // coming from the old app: open windows move to the new one
+      const wins = await self.clients.matchAll({ type: 'window' });
+      for (const w of wins) { try { await w.navigate(w.url); } catch (e) { /* the window will get it next time */ } }
+    }
+  })());
 });
 
-// ─── Fetch ────────────────────────────────────────────────────────
 self.addEventListener('fetch', (event) => {
-  const { request } = event;
-  const url = new URL(request.url);
-
-  // Apps Script API → Network ONLY (لا يُحفظ أبداً في الكاش)
-  if (url.hostname === 'script.google.com') {
-    event.respondWith(fetch(request));
+  const req = event.request;
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
+  if (req.mode === 'navigate') {
+    event.respondWith(fetch(req).then((res) => {
+      if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put('./index.html', copy)); }
+      return res;
+    }).catch(async () => (await caches.match('./index.html')) || (await caches.match('./offline.html')) || new Response('offline', { status: 503 })));
     return;
   }
-
-  // Google Sheets API → Network first, fallback to cache
-  if (url.hostname === 'sheets.googleapis.com') {
-    event.respondWith(networkFirst(request, DATA_CACHE));
-    return;
-  }
-
-  // Google Fonts → Cache first
-  if (url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com') {
-    event.respondWith(cacheFirst(request, STATIC_CACHE));
-    return;
-  }
-
-  // صور خارجية (Imgur, Drive, etc.) → Network first عشان تتحدث دايماً
-  const isExternalImage = url.hostname !== self.location.hostname &&
-    /\.(jpg|jpeg|png|webp|gif|svg)(\?.*)?$/i.test(url.pathname);
-  if (isExternalImage) {
-    event.respondWith(networkFirst(request, STATIC_CACHE));
-    return;
-  }
-
-  // الملفات الثابتة → Cache first
-  if (request.method === 'GET') {
-    event.respondWith(cacheFirst(request, STATIC_CACHE));
+  if (url.pathname.includes('/assets/')) {
+    event.respondWith(caches.match(req).then((hit) => hit || fetch(req).then((res) => {
+      if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); }
+      return res;
+    })));
   }
 });
 
-// ─── Strategies ───────────────────────────────────────────────────
-
-async function cacheFirst(request, cacheName) {
-  const cached = await caches.match(request);
-  if (cached) return cached;
-
-  try {
-    const response = await fetch(request);
-    if (response.ok) {
-      const cache = await caches.open(cacheName);
-      cache.put(request, response.clone());
-    }
-    return response;
-  } catch (e) {
-    // offline fallback
-    const fallback = await caches.match('./offline.html');
-    return fallback || new Response('Offline', { status: 503 });
-  }
-}
-
-async function networkFirst(request, cacheName) {
-  try {
-    const response = await fetch(request);
-    if (response.ok) {
-      const cache = await caches.open(cacheName);
-      cache.put(request, response.clone());
-    }
-    return response;
-  } catch (e) {
-    const cached = await caches.match(request);
-    return cached || new Response(JSON.stringify({ error: 'offline' }), {
-      headers: { 'Content-Type': 'application/json' },
-      status: 503,
-    });
-  }
-}
-
-// ─── Push Notifications (جاهز للمستقبل) ──────────────────────────
 self.addEventListener('push', (event) => {
   if (!event.data) return;
-  const data = event.data.json();
-  event.waitUntil(
-    self.registration.showNotification(data.title || 'سلطان للمواد الغذائية', {
-      body:  data.body  || '',
-      icon:  data.icon  || './assets/icons/icon-192.png',
-      badge: data.badge || './assets/icons/icon-72.png',
-      image: data.image || undefined,
-      dir:   'rtl',
-      lang:  'ar',
-      data:  data.url   || './',
-      vibrate: [100, 50, 100],
-    })
-  );
+  let data = {};
+  try { data = event.data.json(); } catch (e) { data = { body: event.data.text() }; }
+  event.waitUntil(self.registration.showNotification(data.title || 'سلطانو', {
+    body: data.body || '',
+    icon: data.icon || './assets/icons/icon-192.png',
+    badge: data.badge || './assets/icons/icon-72.png',
+    image: data.image || undefined,
+    dir: 'rtl', lang: 'ar',
+    data: data.url || './',
+    vibrate: [100, 50, 100],
+  }));
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  event.waitUntil(
-    clients.openWindow(event.notification.data || './')
-  );
+  event.waitUntil(self.clients.openWindow(event.notification.data || './'));
 });
