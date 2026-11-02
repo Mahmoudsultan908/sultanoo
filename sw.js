@@ -5,7 +5,7 @@
 //  * the app's files (hashed names under assets/): saved once, served from the device;
 //  * the server (another address) always goes to the network — prices, stock and orders are never served from a copy;
 //  * phone notifications: shown the same way as before (same payload: title, body, icon, image, url).
-const CACHE = 'sultanoo-new-v6';
+const CACHE = 'sultanoo-new-v5';
 const SHELL = ['./', './index.html', './offline.html', './manifest.json'];
 
 self.addEventListener('install', (event) => {
