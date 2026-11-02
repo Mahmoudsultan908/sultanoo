@@ -5,7 +5,7 @@
 //  * the app's files (hashed names under assets/): saved once, served from the device;
 //  * the server (another address) always goes to the network — prices, stock and orders are never served from a copy;
 //  * phone notifications: shown the same way as before (same payload: title, body, icon, image, url).
-const CACHE = 'sultanoo-new-v3';
+const CACHE = 'sultanoo-new-v2';
 const SHELL = ['./', './index.html', './offline.html', './manifest.json'];
 
 self.addEventListener('install', (event) => {
@@ -19,7 +19,7 @@ self.addEventListener('activate', (event) => {
     const old = keys.filter((k) => k !== CACHE && (k.startsWith('sultan-static-') || k.startsWith('sultan-data-') || k.startsWith('sultanoo-')));
     await Promise.all(old.map((k) => caches.delete(k)));
     await self.clients.claim();
-    if (old.some((k) => k.startsWith('sultan-') || k.startsWith('sultanoo-'))) {   // old app or old installed Sultanoo shell: reload open windows onto the new bundle
+    if (old.some((k) => k.startsWith('sultan-'))) {   // coming from the old app: open windows move to the new one
       const wins = await self.clients.matchAll({ type: 'window' });
       for (const w of wins) { try { await w.navigate(w.url); } catch (e) { /* the window will get it next time */ } }
     }
